@@ -1,0 +1,148 @@
+# PesoWise local stack.
+#   cp .env.example .env   (then edit the secrets)
+#   docker compose up --build
+#
+# Services are added to this file as each build step lands. Currently: the three
+# Postgres instances (one per service, per the database-per-service decision) and
+# the gateway. Routes to services that don't exist yet will return 503 — expected.
+
+name: pesowise
+
+x-postgres-common: &postgres-common
+  image: postgres:16-alpine
+  restart: unless-stopped
+  networks: [pesowise]
+
+services:
+  # ---------------------------------------------------------------- databases
+  postgres-auth:
+    <<: *postgres-common
+    container_name: pesowise-postgres-auth
+    environment:
+      POSTGRES_DB: ${AUTH_DB_NAME}
+      POSTGRES_USER: ${AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+    ports:
+      - "${AUTH_DB_PORT}:5432"
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER} -d ${AUTH_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  postgres-ledger:
+    <<: *postgres-common
+    container_name: pesowise-postgres-ledger
+    environment:
+      POSTGRES_DB: ${LEDGER_DB_NAME}
+      POSTGRES_USER: ${LEDGER_DB_USER}
+      POSTGRES_PASSWORD: ${LEDGER_DB_PASSWORD}
+    ports:
+      - "${LEDGER_DB_PORT}:5432"
+    volumes:
+      - postgres-ledger-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LEDGER_DB_USER} -d ${LEDGER_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  postgres-planning:
+    <<: *postgres-common
+    container_name: pesowise-postgres-planning
+    environment:
+      POSTGRES_DB: ${PLANNING_DB_NAME}
+      POSTGRES_USER: ${PLANNING_DB_USER}
+      POSTGRES_PASSWORD: ${PLANNING_DB_PASSWORD}
+    ports:
+      - "${PLANNING_DB_PORT}:5432"
+    volumes:
+      - postgres-planning-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PLANNING_DB_USER} -d ${PLANNING_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ----------------------------------------------------------------- services
+  auth-service:
+    build: ./services/auth-service
+    container_name: pesowise-auth-service
+    restart: unless-stopped
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8081
+      DB_HOST: postgres-auth
+      DB_PORT: 5432
+      DB_NAME: ${AUTH_DB_NAME}
+      DB_USER: ${AUTH_DB_USER}
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+    networks: [pesowise]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  gateway:
+    build: ./services/gateway
+    container_name: pesowise-gateway
+    restart: unless-stopped
+    # service_started, not service_healthy: the gateway must come up even when a downstream
+    # is down (it returns 503 for that route), otherwise one sick service blocks the whole API.
+    depends_on:
+      auth-service:
+        condition: service_started
+    environment:
+      SERVER_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      LEDGER_SERVICE_URL: http://ledger-service:8082
+      PLANNING_SERVICE_URL: http://planning-service:8083
+      CORS_ALLOWED_ORIGIN: http://localhost:${FRONTEND_PORT}
+    ports:
+      - "${GATEWAY_PORT}:8080"
+    networks: [pesowise]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ----------------------------------------------------------------- frontend
+  frontend:
+    build: ./frontend
+    container_name: pesowise-frontend
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT}:80"
+    networks: [pesowise]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  pesowise:
+    driver: bridge
+
+volumes:
+  postgres-auth-data:
+  postgres-ledger-data:
+  postgres-planning-data:

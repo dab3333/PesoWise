@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="PesoWise — personal budgeting that shows where your pesos actually go." />
+    <!-- Painted before React mounts so a dark-theme user never sees a white flash. The
+         provider re-stamps the same attribute on mount. -->
+    <script>
+      (function () {
+        var stored = localStorage.getItem('pesowise.theme')
+        var dark =
+          stored === 'dark' ||
+          (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        document.documentElement.style.background = dark ? '#0f172a' : '#f8fafc'
+      })()
+    </script>
+    <title>PesoWise</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

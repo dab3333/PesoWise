@@ -1,0 +1,12 @@
+# Normalise line endings in the repo so the mixed Windows/container toolchain stays consistent.
+* text=auto eol=lf
+
+# Shell scripts and Dockerfiles must keep LF or they break inside Linux containers.
+*.sh   text eol=lf
+*.conf text eol=lf
+Dockerfile text eol=lf
+
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.jar binary

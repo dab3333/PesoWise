@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* The theme provider always stamps data-theme on <html> (resolving the OS preference in JS),
+   so dark values need defining exactly once — no prefers-color-scheme duplication. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---------------------------------------------------------------- raw palette
+   Per DESIGN.md: jade is the single brand accent, slate is the neutral ramp.
+   No gradients anywhere — separation comes from 1px borders and whitespace. */
+:root {
+  --jade-50:  #ecfdf5;
+  --jade-100: #d1fae5;
+  --jade-600: #0f8a6c;
+  --jade-700: #0b6e56;
+  --jade-900: #064e3b;
+
+  --slate-50:  #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-700: #334155;
+  --slate-900: #0f172a;
+
+  /* Semantic roles — light theme. */
+  --canvas:        var(--slate-50);
+  --surface:       #ffffff;
+  --surface-muted: var(--slate-100);
+  --line:          var(--slate-200);
+  --ink:           var(--slate-900);
+  --body:          var(--slate-700);
+  --muted:         var(--slate-500);
+  --subtle:        var(--slate-400);
+  --accent:        var(--jade-600);
+  --accent-hover:  var(--jade-700);
+  --accent-soft:   var(--jade-50);
+  --accent-on:     #ffffff;
+
+  --income:  #0f8a6c;
+  --expense: #dc2626;
+  --warning: #d97706;
+  --info:    #2563eb;
+}
+
+/* Dark theme: same roles, swapped values. The accent lightens to stay legible. */
+:root[data-theme="dark"] {
+  --canvas:        var(--slate-900);
+  --surface:       #1a2333;
+  --surface-muted: #223047;
+  --line:          #2b3648;
+  --ink:           var(--slate-200);
+  --body:          #cbd5e1;
+  --muted:         var(--slate-400);
+  --subtle:        var(--slate-500);
+  --accent:        #22b088;
+  --accent-hover:  #34c79c;
+  --accent-soft:   #123027;
+  --accent-on:     #04241b;
+
+  --income:  #22b088;
+  --expense: #f87171;
+  --warning: #fbbf24;
+  --info:    #60a5fa;
+}
+
+/* ------------------------------------------------------- Tailwind theme bridge
+   `inline` so utilities resolve to the live var and follow the theme swap. */
+@theme inline {
+  --font-sans: "Inter Variable", system-ui, -apple-system, sans-serif;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-on: var(--accent-on);
+
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  /* Categorical chart ramp. Flat fills only — no gradient defs. */
+  --color-chart-1: #0f8a6c;
+  --color-chart-2: #2563eb;
+  --color-chart-3: #d97706;
+  --color-chart-4: #7c3aed;
+  --color-chart-5: #db2777;
+  --color-chart-6: #0891b2;
+  --color-chart-7: #65a30d;
+  --color-chart-8: #64748b;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-body font-sans antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply text-ink;
+  }
+
+  /* Money and figures must align in columns — non-negotiable in a budgeting app. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Always-visible, jade focus ring. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
