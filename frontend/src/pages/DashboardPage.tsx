@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { useBudgetOverview } from '@/api/useBudgets'
+import { useRecurringBills } from '@/api/useRecurring'
 import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Meter } from '@/components/Meter'
@@ -32,6 +33,7 @@ export function DashboardPage() {
   const daily = useDailyTotals(month)
   const accounts = useAccounts()
   const budgets = useBudgetOverview(month)
+  const recurring = useRecurringBills()
 
   const totalBalance = (accounts.data ?? []).reduce((sum, account) => sum + toNumber(account.balance), 0)
 
@@ -72,6 +74,36 @@ export function DashboardPage() {
             <LazyDailyTrendChart data={daily.data ?? []} />
           </Loadable>
         </Card>
+
+        {/* Only appears when something is actually due — an empty "upcoming bills" card is noise. */}
+        {(recurring.data?.dueNow.length ?? 0) > 0 && (
+          <Card className="lg:col-span-2">
+            <CardTitle
+              action={
+                <Link to="/recurring" className="text-xs font-medium text-accent hover:underline">
+                  Manage bills
+                </Link>
+              }
+            >
+              Bills due now
+            </CardTitle>
+            <ul className="divide-y divide-line">
+              {(recurring.data?.dueNow ?? []).map((bill) => (
+                <li key={bill.id} className="flex items-center gap-3 py-2.5">
+                  <span className="min-w-0 flex-1 truncate text-sm text-ink">{bill.name}</span>
+                  <span className={`shrink-0 text-xs ${bill.daysUntilDue < 0 ? 'text-expense' : 'text-muted'}`}>
+                    {bill.daysUntilDue < 0
+                      ? `${Math.abs(bill.daysUntilDue)} day(s) late`
+                      : 'due today'}
+                  </span>
+                  <span className="tnum shrink-0 text-sm font-medium text-ink">
+                    {formatPeso(bill.amount)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
 
         <Card className="lg:col-span-2">
           <CardTitle

@@ -1,5 +1,6 @@
 package ph.pesowise.ledger.service;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -15,6 +16,7 @@ import ph.pesowise.ledger.domain.Enums.SourceType;
 import ph.pesowise.ledger.domain.Transaction;
 import ph.pesowise.ledger.repo.AccountRepository;
 import ph.pesowise.ledger.repo.TransactionRepository;
+import ph.pesowise.ledger.web.ConflictException;
 import ph.pesowise.ledger.web.NotFoundException;
 
 import java.time.LocalDate;
@@ -77,11 +79,22 @@ public class TransactionService {
                 request.txnDate(), request.note(), SourceType.MANUAL, null);
     }
 
-    /** Used by planning-service for debt payments, goal contributions and recurring bills. */
+    /**
+     * Used by planning-service for debt payments, goal contributions and recurring bills.
+     *
+     * <p>A recurring bill may be posted at most once per date, enforced by a unique index. Hitting it
+     * means the occurrence was already recorded — a retry after a partial failure — so it is reported
+     * as a 409 rather than a 500, letting the caller treat it as "already done" instead of an error.
+     */
     @Transactional
     public TransactionResponse createFromSource(UUID userId, SourcedTransactionRequest request) {
-        return save(userId, request.accountId(), request.categoryId(), request.amount(),
-                request.txnDate(), request.note(), request.sourceType(), request.sourceId());
+        try {
+            return save(userId, request.accountId(), request.categoryId(), request.amount(),
+                    request.txnDate(), request.note(), request.sourceType(), request.sourceId());
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException(
+                    "That recurring bill has already been recorded for %s.".formatted(request.txnDate()));
+        }
     }
 
     private TransactionResponse save(

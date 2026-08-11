@@ -188,8 +188,6 @@ continuous axis.
 
 ## planning-service
 
-Recurring bills are documented when step 9 lands (see [build-plan.md](build-plan.md)).
-
 ### Savings goals
 
 Follows the same contribution-to-ledger pattern as debt payments, with two deliberate differences:
@@ -463,3 +461,112 @@ How the split works, since the method itself only defines the three pools:
 Copies every limit from the previous month → `{ "copied": 3 }`. Returns **404** if that month has
 no budget. "Same as last month" is the common case, and retyping fifteen numbers is how people stop
 budgeting.
+
+### Recurring bills
+
+A bill is a **transaction template plus a cursor** (`nextRunDate`). A daily pass walks the cursor
+forward, recording each occurrence it satisfies.
+
+#### `GET /api/recurring`
+
+```json
+{
+  "monthlyTotal": 20300.00,
+  "dueNow": [ … ],
+  "bills": [
+    { "id": "…", "name": "Rent", "categoryId": "…", "accountId": "…",
+      "amount": 15000.00, "frequency": "MONTHLY", "dayOfPeriod": 5,
+      "nextRunDate": "2026-09-05", "daysUntilDue": 25, "dueNow": false,
+      "autoPost": true, "active": true, "note": null, "postedCount": 1 }
+  ]
+}
+```
+
+- `monthlyTotal` normalises frequencies so they can be summed: weekly bills use **52 weeks ÷ 12
+  months**, not 4 per month, which would overstate them by about 8%. Inactive bills are excluded.
+- `dueNow` is the same bills filtered, so the UI does not have to.
+- `dayOfPeriod` is the anchor day for monthly bills — see the month-end note below.
+
+#### `POST /api/recurring` → 201 · `PUT /api/recurring/{id}`
+
+```json
+{ "name": "Rent", "categoryId": "…", "accountId": "…", "amount": "15000.00",
+  "frequency": "MONTHLY", "nextRunDate": "2026-08-05",
+  "autoPost": true, "active": true, "note": "apartment" }
+```
+
+`frequency` is `WEEKLY` | `MONTHLY` | `YEARLY`. `nextRunDate` is the first occurrence, and for
+monthly bills it also sets the anchor day.
+
+**`autoPost` defaults to false**, which is the right default: a bill whose amount varies (Meralco,
+water) should never post itself. Fixed amounts can opt in.
+
+`active: false` pauses a bill without deleting it.
+
+#### `DELETE /api/recurring/{id}` → 204
+
+Stops the bill and deletes its run history. **The transactions it already created are kept.** Pause
+it instead to stop it temporarily.
+
+#### `GET /api/recurring/{id}/runs`
+
+One entry per occurrence already dealt with. `skipped: true` means it was marked done without
+recording anything.
+
+#### `POST /api/recurring/{id}/post` → 201
+
+Confirms the current occurrence — the path for `autoPost: false` bills. **409** if the bill is not
+due yet, or if that occurrence was already recorded.
+
+#### `POST /api/recurring/{id}/skip` → 201
+
+Marks the current occurrence dealt with **without** recording a transaction — "I did not pay this
+one". Advances the cursor.
+
+#### `POST /api/recurring/run`
+
+Runs the daily pass immediately, rather than waiting until after midnight.
+
+```json
+{ "posted": 2, "flagged": 1, "skipped": 0, "notes": [] }
+```
+
+`flagged` counts bills left for the user to confirm; `skipped` counts occurrences that were already
+recorded — the idempotency guard doing its job, not an error. `notes` carries anything truncated or
+failed, so a partial result is never silent.
+
+Operates on **every** user's due bills, since the scheduler has no notion of a current user — hence
+counts rather than data. **Safe to call twice**, which is the whole point of the design below.
+
+#### Month-end behaviour
+
+A monthly bill anchored on the 31st does not drift:
+
+```
+31 Jan → 28 Feb → 31 Mar → 30 Apr → 31 May
+```
+
+The cursor advances from the stored **anchor day**, clamped to the target month's length, rather than
+from the previous (already clamped) date. Advancing from the clamped date would leave the bill on the
+28th for the rest of its life. In a leap year it correctly reaches 29 February.
+
+#### Why it cannot charge twice
+
+The pass runs on a timer and a container restart re-triggers it, so two guards protect each
+occurrence:
+
+1. **planning-service claims first.** A `recurring_runs` row is inserted *before* the ledger is
+   called, with a unique index on `(bill_id, due_date)`. A duplicate fails on the insert, before any
+   money is written. Posting first would charge twice and only then discover the clash.
+2. **ledger-service refuses the duplicate.** A unique index on `(user_id, source_id, txn_date)` for
+   `RECURRING_BILL` rows covers the case guard 1 cannot: if the ledger write succeeds and
+   planning-service then fails to commit, the claim rolls back and guard 1 is gone. The ledger
+   answers 409, which is treated as "already recorded" rather than an error, because a retry could
+   never succeed.
+
+   Scoped to `RECURRING_BILL` deliberately — two debt payments or goal contributions on the same day
+   are perfectly legitimate.
+
+Missed occurrences are **caught up, not dropped** (rent that was due really was due), capped at 12
+per bill per pass with the truncation reported in `notes`. Each occurrence commits in its own
+transaction, and a bill that fails is logged, reported, and skipped so it cannot hold up the queue.

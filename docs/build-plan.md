@@ -18,7 +18,7 @@ deployable and the history reads as the build order.
 | 6 | planning-service budgets + 70-20-10 suggester | ✅ Done |
 | 7 | planning-service debts | ✅ Done |
 | 8 | planning-service savings goals | ✅ Done |
-| 9 | planning-service recurring bills + scheduler | ⬜ Not started |
+| 9 | planning-service recurring bills + scheduler | ✅ Done |
 | 10 | Test matrix + README | ⬜ Not started |
 
 ---
@@ -170,10 +170,55 @@ all four `monthlyNeeded` cases including round-up and the current-month edge, be
 applying to unmet goals, the dual write's captured payload, ledger-failure propagation, undo, and
 archived goals leaving the totals.
 
-## 9. Recurring bills
+## 9. Recurring bills ✅
 
-The `@Scheduled` job, the `recurring_runs` idempotency guard, and the upcoming-bills widget. The
-guard matters because container restarts re-trigger the job — without it, a bill double-charges.
+A bill is a transaction template plus a cursor (`nextRunDate`); a daily `@Scheduled` pass walks it
+forward. The Recurring page, an upcoming-bills widget on the Dashboard, and manual confirm/skip for
+bills whose amount varies.
+
+**Not charging anyone twice is the whole difficulty here**, and it gets two independent guards:
+
+1. **planning-service claims the occurrence before calling the ledger** — a `recurring_runs` row,
+   unique on `(bill_id, due_date)`, inserted first. A duplicate fails on the insert, before any
+   money is written.
+2. **ledger-service refuses a second transaction for the same bill and date** (a new unique index,
+   scoped to `RECURRING_BILL` rows only — two debt payments on the same day are legitimate, so the
+   same rule would be wrong for those). This covers the one gap guard 1 leaves: if the ledger write
+   succeeds and planning-service's commit then fails, the claim rolls back, and without guard 2 the
+   next pass would post again. The ledger's 409 is treated as "already recorded", not an error.
+
+The `REQUIRES_NEW` transaction that settles one occurrence lives in its own bean
+(`RecurringOccurrences`), not a method on the looping service — a same-class call would bypass the
+proxy and the annotation would silently do nothing. Each bill therefore commits independently, so
+one bill pointing at an archived category cannot block the others in the pass; the failure is
+logged and reported in the run summary instead.
+
+**Missed occurrences are caught up, not dropped** — rent that was due really was due — capped at 12
+per bill per pass, with the truncation reported rather than silent.
+
+**Month-end handling was the other trap.** A bill anchored on the 31st advances from its stored
+anchor day, clamped to the target month's length, not from the previous (already-clamped) date:
+`31 Jan → 28 Feb → 31 Mar → 30 Apr → 31 May`. Advancing from the clamped date would leave it on the
+28th forever.
+
+**A real deployment bug, caught only by starting the app:** the two repository interfaces were
+first nested inside a holder class. That compiles cleanly and every unit test still passes — they
+construct services directly with mocks and never start a Spring context — but Spring Data only
+detects repositories declared at the top level, so the app failed at boot with "no qualifying bean".
+Fixed by moving both to top-level files, and closed with `RepositoryDeclarationTest`, a classpath
+scan that fails if a repository interface is ever nested again.
+
+*Verified against real Postgres, including an actual container restart:* an auto-post bill recorded
+by the pass while a confirm-first bill was only flagged; the monthly total normalising a weekly bill
+via 52÷12 rather than ×4; **running the pass four times in a row posted exactly once**; manually
+confirming the second bill, then confirming again returning 409 with the transaction count
+unchanged; **restarting the planning-service container and re-running the pass created zero new
+transactions**; deleting a bill removing its history while its ledger transactions stayed; the
+month-end anchor holding on a real bill.
+
+*Tests:* 99 total (gateway 9, auth 8, ledger 10, planning 72) — cursor advancement including leap
+February and the 31st, both idempotency guards individually, the catch-up cap, one-bill-failure
+isolation, monthly normalisation, and the repository-declaration regression guard.
 
 ## 10. Test matrix and README
 
