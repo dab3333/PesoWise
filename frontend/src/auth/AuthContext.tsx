@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { api, clearToken, getToken, setToken, setUnauthorizedHandler } from '@/lib/api'
 
 export interface User {
@@ -29,11 +30,16 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [initialising, setInitialising] = useState(true)
+  const queryClient = useQueryClient()
 
+  // The cache is keyed by query, not by user — without clearing it, switching accounts (or
+  // logging out and back in as someone else) would render the previous user's cached
+  // transactions, budgets, etc. until every query happened to refetch.
   const logout = useCallback(() => {
     clearToken()
     setUser(null)
-  }, [])
+    queryClient.clear()
+  }, [queryClient])
 
   // A 401 from any request means the session is over; drop the user so the guard redirects.
   useEffect(() => {
@@ -67,11 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const authenticate = useCallback(async (path: string, body: unknown) => {
-    const response = await api.post<AuthResponse>(path, body, { skipAuthRedirect: true })
-    setToken(response.token)
-    setUser(response.user)
-  }, [])
+  const authenticate = useCallback(
+    async (path: string, body: unknown) => {
+      const response = await api.post<AuthResponse>(path, body, { skipAuthRedirect: true })
+      // Drop any cached data from whoever was signed in before — a fresh registration or a
+      // different login must never render through the previous session's cached queries.
+      queryClient.clear()
+      setToken(response.token)
+      setUser(response.user)
+    },
+    [queryClient],
+  )
 
   const value = useMemo<AuthContextValue>(
     () => ({
