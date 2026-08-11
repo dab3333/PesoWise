@@ -19,7 +19,7 @@ deployable and the history reads as the build order.
 | 7 | planning-service debts | ✅ Done |
 | 8 | planning-service savings goals | ✅ Done |
 | 9 | planning-service recurring bills + scheduler | ✅ Done |
-| 10 | Test matrix + README | ⬜ Not started |
+| 10 | Test matrix + README | ✅ Done |
 
 ---
 
@@ -220,30 +220,69 @@ month-end anchor holding on a real bill.
 February and the 31st, both idempotency guards individually, the catch-up cap, one-bill-failure
 isolation, monthly normalisation, and the repository-declaration regression guard.
 
-## 10. Test matrix and README
+## 10. Test matrix and README ✅
 
-- **Unit:** budget progress maths, the 70-20-10 allocator, debt balance reduction,
-  `next_run_date` advancement per frequency — especially month-end (a bill on day 31 in February).
-- **Integration (Testcontainers):** the report aggregate SQL across month boundaries, Flyway
-  applying cleanly, and **an explicit per-service test that user A cannot read or mutate user B's
-  rows**.
-- Feign mocked with WireMock in planning-service tests, so ledger-service need not be running.
+MVP feature work finished at step 9. This step closes the gap the earlier plan flagged
+explicitly: **an actual per-service test proving user A cannot read or mutate user B's rows**,
+not just an inference from "the repository method takes a userId".
 
-## Verification checklist
+An audit (grepping every service's test suite for a cross-user pattern) found the gap was real:
+`DebtServiceTest.scopesByUser` and `GoalServiceTest.scopesByUser` existed; nothing else did.
+ledger-service in particular had **zero** service-level tests for `AccountService`,
+`CategoryService`, or `TransactionService` — only `ReportServiceTest`, which is read-aggregation
+and proves nothing about ownership.
 
-End-to-end, in the browser, once all steps land:
+Added, each following the same shape — the record exists, just not for the caller, so the
+repository correctly returns empty and the service must turn that into 404:
 
-1. `docker compose ps` — all healthy.
-2. Register; confirm redirect to the dashboard.
-3. Confirm seeded categories; add a GCash account.
-4. Add income and expenses across two different months.
-5. Set a budget; confirm spent/remaining matches, and that the bar updates immediately after
-   adding another transaction — this proves both query invalidation and the Feign round trip.
-6. Apply "suggest budget"; confirm the 70-20-10 split matches the entered income.
-7. Record a debt payment; confirm the balance drops **and** a matching ledger transaction appears.
-8. Add a goal contribution; same dual-write check.
-9. Create an auto-posting recurring bill dated today, trigger the scheduler, confirm exactly one
-   transaction. **Run it twice** to prove idempotency.
-10. Confirm the charts render and month navigation works.
-11. `curl` without a token → 401; with a token, only that user's rows.
-12. `mvn test` green in all four services.
+| Service | Class | New tests |
+| --- | --- | --- |
+| ledger-service | `AccountServiceTest` (new) | update/delete blocked cross-user, owner's own succeeds |
+| ledger-service | `CategoryServiceTest` (new) | `require`/delete blocked cross-user, owner's own succeeds |
+| ledger-service | `TransactionServiceTest` (new) | create against another user's account refused *before* the category is even looked up; update/delete blocked cross-user |
+| planning-service | `BudgetServiceTest` | delete blocked cross-user for the same category+month |
+| planning-service | `RecurringServiceTest` | `postNow` blocked cross-user, scheduler never touched |
+
+Every case asserts **404, never 403** — a 403 would confirm the id exists, which is exactly the
+information a caller should not get. `Debt` and `Goal` already had this; the audit is what proves
+the other five entities now do too, rather than assuming the pattern held everywhere because it
+held somewhere.
+
+**Testcontainers integration tests were not added.** They cannot run on this machine — see
+[development.md](development.md#testcontainers-cannot-reach-docker-on-some-machines) — so every
+guarantee that would normally come from an integration suite (Flyway applying cleanly, the
+aggregate SQL, cross-user isolation) was instead verified by exercising the real endpoints against
+the running Compose stack, over all nine steps. That is weaker than a suite that runs in CI on
+every push, and is recorded here as a known gap rather than papered over.
+
+### Final count
+
+**138 tests**, all passing, run immediately before this commit:
+
+| Service | Tests | Covers |
+| --- | --- | --- |
+| gateway | 9 | JWT verification, expiry, forged signatures, **header-spoofing stripped on every path including public ones and preflight** |
+| auth-service | 8 | registration, bcrypt hashing, timing-safe login, email normalisation |
+| ledger-service | 20 | 70-20-10 bucket maths, zero-income division, leap February, malformed input, **5 new cross-user isolation tests** |
+| planning-service | 101 | budget progress and upsert; the suggester's proportional split, rounding, history window; both debt-payment dual-write guards; goal derivation and over-saving; recurring cursor advancement (13 cases including the 31st, leap years, year boundaries); both idempotency guards; the repository-declaration regression guard; **cross-user isolation across every entity** |
+
+### Verification checklist
+
+Performed end to end against the deployed stack at every step, not only at the end:
+
+1. `docker compose ps` — all 8 containers healthy.
+2. Register; confirm redirect to the dashboard; seeded categories and Cash account present.
+3. Add income and expenses across two different months; confirm month isolation in reports.
+4. Set a budget; confirm spent/remaining updates immediately after adding a transaction, and
+   again after deleting it — proving there is no cache to go stale.
+5. Apply "suggest budget"; confirm the 70-20-10 split sums exactly to each bucket's pool.
+6. Record a debt payment; confirm the balance drops **and** a matching ledger transaction
+   appears, tagged `DEBT_PAYMENT`; confirm undo reverses both sides.
+7. Add a goal contribution; same dual-write check, plus over-saving accepted where overpaying a
+   debt is rejected.
+8. Create an auto-posting recurring bill dated in the past, run the pass **four times in a row**:
+   posts exactly once. **Restart the planning-service container** and run it again: still zero
+   new transactions.
+9. Confirm every chart renders, month navigation works, and dark mode has no flash on load.
+10. `curl` without a token → 401 at the gateway; a spoofed `X-User-Id` header → 401, not 200.
+11. `mvn test` green in all four services — 138/138.

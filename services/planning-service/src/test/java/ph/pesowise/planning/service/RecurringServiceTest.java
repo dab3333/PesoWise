@@ -208,6 +208,21 @@ class RecurringServiceTest {
     }
 
     @Test
+    @DisplayName("another user's recurring bill is reported as not found, never as forbidden")
+    void scopesByUser() {
+        UUID owner = UUID.fromString("11111111-0000-4000-8000-000000000001");
+        UUID attacker = UUID.fromString("22222222-0000-4000-8000-000000000002");
+        RecurringBill bill = bill("Rent", Frequency.MONTHLY, "15000", LocalDate.of(2026, 8, 5), true);
+        // The bill exists — under `owner` — so looking it up as `attacker` correctly finds nothing.
+        when(bills.findByIdAndUserId(bill.getId(), attacker)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> recurringService.postNow(attacker, bill.getId()))
+                .isInstanceOf(ph.pesowise.planning.web.NotFoundException.class);
+
+        verify(occurrences, never()).settleDue(any(), any());
+    }
+
+    @Test
     @DisplayName("confirming a bill that is not due yet is a conflict")
     void postNowRejectsBillNotYetDue() {
         RecurringBill future = bill("Rent", Frequency.MONTHLY, "15000", LocalDate.now().plusDays(10), false);

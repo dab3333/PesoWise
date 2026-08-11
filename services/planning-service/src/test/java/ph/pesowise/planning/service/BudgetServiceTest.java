@@ -274,6 +274,20 @@ class BudgetServiceTest {
     }
 
     @Test
+    @DisplayName("deleting another user's budget for the same category and month returns 404")
+    void deleteIsScopedToTheOwner() {
+        UUID attacker = UUID.fromString("99999999-0000-4000-8000-000000000009");
+        // A budget for (GROCERIES, AUGUST) exists — just not owned by ATTACKER — so the repository
+        // correctly returns empty for that combination. This is the isolation guard actually being
+        // exercised, not a generic "nothing exists" case.
+        when(budgets.findByUserIdAndCategoryIdAndPeriodMonth(attacker, GROCERIES, AUGUST.atDay(1)))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> budgetService.delete(attacker, AUGUST, GROCERIES))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
     @DisplayName("the ledger is queried for exactly the selected month")
     void queriesTheSelectedMonthOnly() {
         givenLimits();
