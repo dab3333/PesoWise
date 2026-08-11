@@ -48,19 +48,70 @@ Semantic — state only, never decoration
 `#1a2333`, borders `#2b3648`, body text `--slate-200`, and the accent lightens to `#22b088`
 so it stays legible on dark. Same tokens, swapped values — no separate stylesheet.
 
-## Chart palette
+## Charts
 
-Dashboard charts get a **categorical ramp** derived from jade plus deliberately distinct hues,
-all flat fills, no gradient defs:
+### Form first, colour last
+
+The form follows the reader's job, not habit. These are the decisions and why:
+
+| Chart | Form | Why not the obvious thing |
+| --- | --- | --- |
+| Spend by category | **Horizontal bars**, sorted high→low, **all bars one colour** | Not a donut: with 13 categories a donut can't be compared, and long names ("Load & Internet") don't fit. It is one series over nominal categories, so a colour ramp would double-encode bar length as hue and say nothing new. |
+| Daily trend | **Line**, 2 series, legend always shown | Two measures on **one axis** — both are pesos. Never a second y-scale. |
+| Income / expense / net | **Stat tiles** | A three-bar chart of three numbers is a worse table. |
+| 70-20-10 split | **Three meters**, actual against target | It is a ratio against a limit, which is a meter, not a pie of three slices. |
+| Budget progress | **Meters**, one per category | Same job, same form — so they read as the same thing. |
+
+### Palette — validated, not eyeballed
+
+Chart marks use **separate tokens from text**. A mark needs 3:1 against the surface; text needs
+WCAG contrast; the two land on different values. Text always wears text tokens — a coloured mark
+beside a label carries the identity, the label itself never does.
+
+Both sets were checked with the dataviz palette validator (lightness band, chroma floor, CVD
+separation, normal-vision floor, contrast) and **pass all six checks**:
 
 ```
-#0f8a6c  jade      #2563eb  blue      #d97706  amber
-#7c3aed  violet    #db2777  pink      #0891b2  cyan
-#65a30d  lime      #64748b  slate (always last — "Other")
+light — surface #ffffff              dark — surface #1a2333
+  --chart-1  #0f8a6c  jade             --chart-1  #059669
+  --chart-2  #2563eb  blue             --chart-2  #3b82f6
+  --chart-3  #d97706  amber            --chart-3  #d97706
+  --chart-4  #7c3aed  violet           --chart-4  #8b5cf6
+  --chart-5  #db2777  pink             --chart-5  #ec4899
+  --chart-6  #0891b2  cyan             --chart-6  #0891b2
+  --chart-7  #65a30d  lime             --chart-7  #65a30d
+
+  --chart-income  #0f8a6c              --chart-income  #059669
+  --chart-expense #dc2626              --chart-expense #ef4444
 ```
 
-Category colours are stored per-category in the database (the `color` column), assigned from
-this ramp on seed, so a category is the same colour on every chart on every page.
+**Dark is re-stepped, not flipped.** The dark lightness band (L 0.48–0.67) is narrower than
+light's (0.43–0.77), so the light steps do not carry over — four of the seven had to move.
+
+`--chart-other` (`#64748b` light / `#94a3b8` dark) is the de-emphasis and "Other" colour. It sits
+**deliberately below the chroma floor** because it is not a categorical hue: it must never be
+pressed into service as series 8. Past seven meaningful classes, fold the tail into "Other" or
+show a table — never generate an eighth hue.
+
+Category `color` values are stored per-category in the database and assigned from the light ramp
+on seed. They are used for **identity dots** beside category names, not as a chart encoding
+channel — which is why a fixed stored hex is safe in both themes.
+
+### Mark and chrome rules
+
+- Flat fills only. No gradient defs, ever.
+- Bars: thin, `4px` rounded data-end anchored to the baseline, `2px` surface gap between
+  adjacent bars.
+- Lines: `2px`, markers ≥ `8px` with a `2px` surface ring where they overlap.
+- Grid and axes: solid hairlines in `--chart-grid`, one shade off the surface. **Never dashed** —
+  dashing reads as "threshold" when it is just a grid.
+- Direct-label selectively (the endpoint, the extreme). Never a number on every point.
+- Every chart has a **table-view twin**, so no value is reachable only by hovering.
+- Hover: crosshair and tooltip on the line chart, per-mark tooltip on bars, with hit areas
+  larger than the marks.
+- On refetch, hold the previous render at reduced opacity. No skeleton flash, no layout jump.
+- Filters (the month selector) sit in **one row above** everything they scope — never inside a
+  chart card.
 
 ## Typography
 

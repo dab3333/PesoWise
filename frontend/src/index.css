@@ -41,6 +41,24 @@
   --expense: #dc2626;
   --warning: #d97706;
   --info:    #2563eb;
+
+  /* Chart marks are separate tokens from text: a mark needs 3:1 against the surface,
+     text needs WCAG contrast, and the two land on different values. Validated with the
+     dataviz palette checker against surface #ffffff — all six checks pass. */
+  --chart-1: #0f8a6c;
+  --chart-2: #2563eb;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #db2777;
+  --chart-6: #0891b2;
+  --chart-7: #65a30d;
+  /* De-emphasis / "Other". Deliberately below the chroma floor: it is not a categorical
+     hue and must never be used as series 8. */
+  --chart-other: #64748b;
+
+  --chart-income:  #0f8a6c;
+  --chart-expense: #dc2626;
+  --chart-grid:    #e2e8f0;
 }
 
 /* Dark theme: same roles, swapped values. The accent lightens to stay legible. */
@@ -62,6 +80,22 @@
   --expense: #f87171;
   --warning: #fbbf24;
   --info:    #60a5fa;
+
+  /* Re-stepped for the dark surface, not flipped: the dark lightness band is L 0.48–0.67,
+     narrower than light's 0.43–0.77, so the light steps do not simply carry over.
+     Validated against surface #1a2333 — all six checks pass with no warnings. */
+  --chart-1: #059669;
+  --chart-2: #3b82f6;
+  --chart-3: #d97706;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+  --chart-6: #0891b2;
+  --chart-7: #65a30d;
+  --chart-other: #94a3b8;
+
+  --chart-income:  #059669;
+  --chart-expense: #ef4444;
+  --chart-grid:    #2b3648;
 }
 
 /* ------------------------------------------------------- Tailwind theme bridge
@@ -89,14 +123,17 @@
   --color-info: var(--info);
 
   /* Categorical chart ramp. Flat fills only — no gradient defs. */
-  --color-chart-1: #0f8a6c;
-  --color-chart-2: #2563eb;
-  --color-chart-3: #d97706;
-  --color-chart-4: #7c3aed;
-  --color-chart-5: #db2777;
-  --color-chart-6: #0891b2;
-  --color-chart-7: #65a30d;
-  --color-chart-8: #64748b;
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-other: var(--chart-other);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
+  --color-chart-grid: var(--chart-grid);
 }
 
 @layer base {

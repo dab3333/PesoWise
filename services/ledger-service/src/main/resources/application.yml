@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: ledger-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:pesowise_ledger}
+    username: ${DB_USER:pesowise}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    # Dates as 2026-08-11, not epoch millis — the frontend parses them as local dates.
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    ph.pesowise: INFO

@@ -94,6 +94,28 @@ services:
       retries: 10
       start_period: 40s
 
+  ledger-service:
+    build: ./services/ledger-service
+    container_name: pesowise-ledger-service
+    restart: unless-stopped
+    depends_on:
+      postgres-ledger:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8082
+      DB_HOST: postgres-ledger
+      DB_PORT: 5432
+      DB_NAME: ${LEDGER_DB_NAME}
+      DB_USER: ${LEDGER_DB_USER}
+      DB_PASSWORD: ${LEDGER_DB_PASSWORD}
+    networks: [pesowise]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
   gateway:
     build: ./services/gateway
     container_name: pesowise-gateway
@@ -102,6 +124,8 @@ services:
     # is down (it returns 503 for that route), otherwise one sick service blocks the whole API.
     depends_on:
       auth-service:
+        condition: service_started
+      ledger-service:
         condition: service_started
     environment:
       SERVER_PORT: 8080

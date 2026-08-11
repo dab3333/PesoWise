@@ -3,7 +3,10 @@ import type { ReactNode } from 'react'
 import { useAuth } from '@/auth/AuthContext'
 import { AppShell } from '@/components/AppShell'
 import { AuthPage } from '@/pages/AuthPage'
+import { DashboardPage } from '@/pages/DashboardPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { TransactionsPage } from '@/pages/TransactionsPage'
 
 /** Blocks rendering until the stored token has been checked, then redirects if unauthenticated. */
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -64,14 +67,15 @@ export default function App() {
           </RequireAuth>
         }
       >
+        <Route index element={<DashboardPage />} />
+        <Route path="transactions" element={<TransactionsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+
         {/* Replaced by real pages as each build step lands. */}
-        <Route index element={<PlaceholderPage title="Dashboard" step="step 5" />} />
-        <Route path="transactions" element={<PlaceholderPage title="Transactions" step="step 4" />} />
         <Route path="budgets" element={<PlaceholderPage title="Budgets" step="step 6" />} />
         <Route path="debts" element={<PlaceholderPage title="Debts" step="step 7" />} />
         <Route path="goals" element={<PlaceholderPage title="Goals" step="step 8" />} />
         <Route path="recurring" element={<PlaceholderPage title="Recurring" step="step 9" />} />
-        <Route path="settings" element={<PlaceholderPage title="Settings" step="step 3" />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
