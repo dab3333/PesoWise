@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useAuth } from '@/auth/AuthContext'
 import { AppShell } from '@/components/AppShell'
 import { AuthPage } from '@/pages/AuthPage'
+import { BudgetsPage } from '@/pages/BudgetsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { SettingsPage } from '@/pages/SettingsPage'
@@ -69,10 +70,10 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="transactions" element={<TransactionsPage />} />
+        <Route path="budgets" element={<BudgetsPage />} />
         <Route path="settings" element={<SettingsPage />} />
 
         {/* Replaced by real pages as each build step lands. */}
-        <Route path="budgets" element={<PlaceholderPage title="Budgets" step="step 6" />} />
         <Route path="debts" element={<PlaceholderPage title="Debts" step="step 7" />} />
         <Route path="goals" element={<PlaceholderPage title="Goals" step="step 8" />} />
         <Route path="recurring" element={<PlaceholderPage title="Recurring" step="step 9" />} />

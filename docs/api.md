@@ -188,5 +188,113 @@ continuous axis.
 
 ## planning-service
 
-Budgets, debts, goals, and recurring bills — documented as each build step lands
-(steps 6 through 9 in [build-plan.md](build-plan.md)).
+Debts, goals, and recurring bills are documented as their build steps land (steps 7–9 in
+[build-plan.md](build-plan.md)).
+
+### Budgets
+
+Every endpoint takes `month=YYYY-MM`, defaulting to the current month.
+
+**Nothing here stores a "spent" figure.** Every read fetches live totals from ledger-service over
+Feign and joins them against the stored limits in memory, so a budget bar cannot show a stale
+number after a transaction is edited or deleted.
+
+If ledger-service is unreachable, these endpoints return **503** with a message saying so —
+returning zeroes would tell the user they had spent nothing.
+
+#### `GET /api/budgets`
+
+```json
+{
+  "month": "2026-08",
+  "income": 45000.00,
+  "totalLimit": 26500.00,
+  "totalSpent": 25500.00,
+  "totalRemaining": 1000.00,
+  "unbudgetedSpend": 4000.00,
+  "budgeted": [
+    { "categoryId": "…", "categoryName": "Groceries", "color": "#0f8a6c", "bucket": "NEEDS",
+      "limitAmount": 5500.00, "spent": 6000.00, "remaining": -500.00,
+      "percentUsed": 109.1, "overBudget": true }
+  ],
+  "unbudgeted": [
+    { "categoryId": "…", "categoryName": "Savings", "bucket": "SAVINGS",
+      "limitAmount": null, "spent": 4000.00, "remaining": null,
+      "percentUsed": 0, "overBudget": false }
+  ]
+}
+```
+
+- `budgeted` is sorted **worst standing first** — the categories needing attention lead.
+- `remaining` goes **negative when overspent**. That is deliberate: `−₱500` is the useful number,
+  and clamping it to zero hides the overspend.
+- `unbudgeted` lists categories with spending but no limit, and only those actually used —
+  `unbudgetedSpend` is the number that quietly breaks a budget when it is not surfaced.
+- Income categories never appear: the method divides spending, not earnings.
+
+#### `PUT /api/budgets` → 204
+
+```json
+{ "categoryId": "…", "limitAmount": "5500.00" }
+```
+
+An **upsert** — "set the budget for Groceries this month" is one intention, so there is no separate
+create and update. `limitAmount` must be greater than zero.
+
+#### `PUT /api/budgets/bulk` → 204
+
+`{ "budgets": [ { "categoryId": "…", "limitAmount": "…" }, … ] }` — up to 200 entries, applied in
+**one transaction** so a suggestion saves all-or-nothing.
+
+#### `DELETE /api/budgets/{categoryId}` → 204
+
+Removes the limit. Transactions are untouched; the spending simply moves to `unbudgeted`.
+
+#### `POST /api/budgets/suggestion`
+
+```json
+{ "expectedIncome": "45000.00" }
+```
+
+**A preview — nothing is saved.** The client shows the proposed limits, lets the user adjust, then
+applies via the bulk endpoint.
+
+Omit `expectedIncome` (or send `{}`) to estimate from **last month's actual income**;
+`incomeWasEstimated` reports which happened. With no income recorded to estimate from, returns
+**400** asking for a figure.
+
+```json
+{
+  "month": "2026-09",
+  "expectedIncome": 45000.00,
+  "incomeWasEstimated": false,
+  "buckets": [
+    { "bucket": "NEEDS", "targetPercent": 70, "amount": 31500.00 },
+    { "bucket": "WANTS", "targetPercent": 20, "amount": 9000.00 },
+    { "bucket": "SAVINGS", "targetPercent": 10, "amount": 4500.00 }
+  ],
+  "lines": [
+    { "categoryId": "…", "categoryName": "Rent", "bucket": "NEEDS",
+      "limitAmount": 19285.71, "fromHistory": true }
+  ]
+}
+```
+
+How the split works, since the method itself only defines the three pools:
+
+- Each bucket's pool is divided across its categories **in proportion to what was actually spent
+  over the previous three months**. An even split would give Rent and Load & Internet the same
+  limit, which nobody would accept.
+- The history window **ends the month before** the one being budgeted, so a part-finished month
+  cannot drag every limit down.
+- A bucket with no history at all falls back to an even split, so a new user still gets a complete
+  budget. `fromHistory: false` marks those lines, and the UI labels them "even split".
+- Each bucket's lines **sum exactly to its pool** — the rounding remainder is given to the largest
+  line, where a few centavos do not show.
+- Lines that would round to zero are dropped rather than saved as invalid budgets.
+
+#### `POST /api/budgets/copy-previous`
+
+Copies every limit from the previous month → `{ "copied": 3 }`. Returns **404** if that month has
+no budget. "Same as last month" is the common case, and retyping fifteen numbers is how people stop
+budgeting.

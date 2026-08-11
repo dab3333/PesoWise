@@ -23,5 +23,5 @@ USER spring:spring
 
 COPY --from=build /build/target/*.jar app.jar
 
-EXPOSE 8081
+EXPOSE 8083
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]

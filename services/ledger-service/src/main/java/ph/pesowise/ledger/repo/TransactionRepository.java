@@ -68,6 +68,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                    c.name           AS categoryName,
                    c.color          AS color,
                    c.kind           AS kind,
+                   c.bucket         AS bucket,
                    COALESCE(SUM(t.amount), 0) AS total
             FROM categories c
             LEFT JOIN transactions t
@@ -75,7 +76,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                   AND t.user_id = c.user_id
                   AND t.txn_date BETWEEN :from AND :to
             WHERE c.user_id = :userId AND NOT c.archived
-            GROUP BY c.id, c.name, c.color, c.kind
+            GROUP BY c.id, c.name, c.color, c.kind, c.bucket
             ORDER BY total DESC, c.name ASC
             """, nativeQuery = true)
     List<CategoryTotal> findTotalsByCategory(

@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
+import { useBudgetOverview } from '@/api/useBudgets'
 import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Meter } from '@/components/Meter'
@@ -29,6 +31,7 @@ export function DashboardPage() {
   const buckets = useBucketBreakdown(month)
   const daily = useDailyTotals(month)
   const accounts = useAccounts()
+  const budgets = useBudgetOverview(month)
 
   const totalBalance = (accounts.data ?? []).reduce((sum, account) => sum + toNumber(account.balance), 0)
 
@@ -67,6 +70,48 @@ export function DashboardPage() {
           <CardTitle>Day by day</CardTitle>
           <Loadable loading={daily.isLoading}>
             <LazyDailyTrendChart data={daily.data ?? []} />
+          </Loadable>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardTitle
+            action={
+              <Link to="/budgets" className="text-xs font-medium text-accent hover:underline">
+                Manage budgets
+              </Link>
+            }
+          >
+            Budget progress
+          </CardTitle>
+          <Loadable loading={budgets.isLoading}>
+            {(budgets.data?.budgeted.length ?? 0) === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">
+                No budgets set for this month.{' '}
+                <Link to="/budgets" className="font-medium text-accent hover:underline">
+                  Set one up
+                </Link>
+                .
+              </p>
+            ) : (
+              <>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  {/* The worst-standing few — the page is a summary, not the Budgets page. */}
+                  {(budgets.data?.budgeted ?? []).slice(0, 4).map((line) => (
+                    <Meter
+                      key={line.categoryId}
+                      label={line.categoryName}
+                      actual={line.spent}
+                      target={line.limitAmount ?? 0}
+                    />
+                  ))}
+                </div>
+                {toNumber(budgets.data?.unbudgetedSpend ?? 0) > 0 && (
+                  <p className="mt-4 text-xs text-warning">
+                    {formatPeso(budgets.data?.unbudgetedSpend ?? 0)} spent outside any budget.
+                  </p>
+                )}
+              </>
+            )}
           </Loadable>
         </Card>
 

@@ -4,7 +4,10 @@ WORKDIR /build
 
 # Copy the POM first so the dependency layer caches independently of source changes.
 COPY pom.xml .
-RUN mvn -B dependency:go-offline
+# Warms the dependency layer so source edits do not re-download everything. This is a cache
+# optimisation only, so a partial resolve must not fail the build -- `package` below fetches
+# anything still missing.
+RUN mvn -B dependency:go-offline -q || true
 
 COPY src ./src
 RUN mvn -B clean package -DskipTests

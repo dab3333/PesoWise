@@ -3,7 +3,10 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 
 COPY pom.xml .
-RUN mvn -B dependency:go-offline
+# Warms the dependency layer so source edits do not re-download everything. This is a cache
+# optimisation only, so a partial resolve must not fail the build -- `package` below fetches
+# anything still missing.
+RUN mvn -B dependency:go-offline -q || true
 
 COPY src ./src
 # Tests are skipped here: the integration suite needs Testcontainers, which would mean a

@@ -27,7 +27,7 @@ public final class Projections {
         BigDecimal getExpense();
     }
 
-    /** Spend (or income) grouped by category — drives the donut and every budget lookup. */
+    /** Spend (or income) grouped by category — drives the bar chart and every budget lookup. */
     public interface CategoryTotal {
         UUID getCategoryId();
 
@@ -36,6 +36,9 @@ public final class Projections {
         String getColor();
 
         String getKind();
+
+        /** Null for income categories, which carry no 70-20-10 bucket. */
+        String getBucket();
 
         BigDecimal getTotal();
     }

@@ -125,8 +125,9 @@ public final class LedgerDtos {
     ) {
     }
 
+    /** @param bucket null for income categories, which carry no 70-20-10 bucket */
     public record CategoryTotalResponse(
-            UUID categoryId, String categoryName, String color, Kind kind, BigDecimal total
+            UUID categoryId, String categoryName, String color, Kind kind, Bucket bucket, BigDecimal total
     ) {
     }
 

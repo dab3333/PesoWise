@@ -18,9 +18,16 @@ export const queryKeys = {
   daily: (month: string) => ['reports', 'daily', month] as const,
 }
 
-/** Everything a transaction write can affect. */
+/**
+ * Everything a transaction write can affect.
+ *
+ * `budgets` belongs here even though it lives in another service: budget progress is computed
+ * from live transaction totals, so adding a transaction changes every budget bar. Omitting it is
+ * how the Budgets page ends up showing yesterday's numbers.
+ */
 export const transactionSideEffects = [
   ['transactions'],
   ['reports'],
   ['accounts'],
+  ['budgets'],
 ] as const

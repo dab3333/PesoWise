@@ -65,5 +65,9 @@ Testcontainers cannot reach the Docker daemon on every machine — see
 
 ## Status
 
-Steps 1–5 of 10 in [build-plan.md](docs/build-plan.md): auth and the full ledger backend are done
-and verified; the ledger's three pages and all of `planning-service` are in progress.
+Steps 1–6 of 10 in [build-plan.md](docs/build-plan.md). Working and verified: auth, the full
+ledger (accounts, categories, transactions, reports), and budgets with the 70-20-10 suggester —
+Dashboard, Transactions, Budgets and Settings pages included. Remaining: debts, savings goals, and
+recurring bills.
+
+Tests: 53 passing (gateway 9, auth 8, ledger 10, planning 26).

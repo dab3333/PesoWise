@@ -12,10 +12,10 @@ deployable and the history reads as the build order.
 | --- | --- | --- |
 | 1 | Scaffolding, Compose, gateway | ✅ Done |
 | 2 | auth-service + gateway JWT filter + login/register | ✅ Done |
-| 3 | ledger-service accounts & categories + Settings page | 🔨 Backend done, page in progress |
-| 4 | ledger-service transactions + Transactions page | 🔨 Backend done, page in progress |
-| 5 | Report endpoints + Dashboard page | 🔨 Backend done, page in progress |
-| 6 | planning-service budgets + 70-20-10 suggester | ⬜ Not started |
+| 3 | ledger-service accounts & categories + Settings page | ✅ Done |
+| 4 | ledger-service transactions + Transactions page | ✅ Done |
+| 5 | Report endpoints + Dashboard page | ✅ Done |
+| 6 | planning-service budgets + 70-20-10 suggester | ✅ Done |
 | 7 | planning-service debts | ⬜ Not started |
 | 8 | planning-service savings goals | ⬜ Not started |
 | 9 | planning-service recurring bills + scheduler | ⬜ Not started |
@@ -42,7 +42,7 @@ route without a token 401; **spoofed `X-User-Id` 401, not 200**; Flyway history 
 
 *Tests:* gateway 9/9, auth-service 8/8.
 
-## 3–5. ledger-service 🔨
+## 3–5. ledger-service ✅
 
 Built as one service, exposed as three UI steps.
 
@@ -59,12 +59,41 @@ series returns all 31 days with 7 active; derived account balance correct.
 *Tests:* ledger-service 10/10 covering the 70-20-10 maths, zero-income division, month-length
 edge cases including leap February, and malformed input.
 
-**Remaining:** the Settings, Transactions, and Dashboard pages.
+*Frontend:* Dashboard (stat tiles, spend-by-category bars, daily trend, 70-20-10 meters, budget
+progress), Transactions (paged, filtered, full CRUD), and Settings (accounts, categories,
+appearance). Recharts is code-split, so the initial bundle is 318 kB rather than 685 kB.
 
-## 6. Budgets
+## 6. Budgets ✅
 
-`budgets` table, the Feign-backed progress calculation, and the 70-20-10 suggester that turns an
-expected monthly income into per-category limits. Budgets page with progress bars.
+The `budgets` table, the Feign-backed progress calculation, the 70-20-10 suggester, and the Budgets
+page. This is the first step where two services talk to each other.
+
+**Progress is computed live**, never cached: each read fetches totals from ledger-service and joins
+them against the stored limits in memory. That is what the synchronous-REST decision buys — there is
+no cache to invalidate, so a bar cannot show a stale figure after a transaction is edited.
+
+**The suggester weights by history.** The 70-20-10 method only defines the three pools; splitting a
+pool across the categories in it is what decides whether the suggestion is usable, so each category
+gets a share proportional to its own spending over the previous three months. Details and the
+rounding rule are in [api.md](api.md#post-apibudgetssuggestion).
+
+Two things worth recording from building it:
+
+- **Feign renders `LocalDate` with default locale formatting** unless told otherwise — it sent
+  `8/1/26` instead of `2026-08-01`, and ledger-service rejected it with a 400. Both Java signatures
+  looked perfectly correct, so this only appeared at runtime. Fixed globally with a
+  `FeignFormatterRegistrar`, so date parameters added in later steps are right by default.
+- **`bucket` was added to ledger-service's `/by-category` response**, so the budgets page and the
+  suggester get the 70-20-10 grouping without a second call.
+
+*Verified against real Postgres, across both services:* live progress with an overspent category
+reporting negative remaining; unbudgeted spend surfaced separately; upsert idempotent (three rows
+after repeated writes, not six); the suggester's per-bucket lines summing exactly to their pools;
+income estimated from last month when omitted; copy-previous-month; zero limit 400; malformed month
+400; no token 401.
+
+*Tests:* planning-service 26/26 — the suggester's proportional split, even-split fallback, rounding
+drift, history window, income estimation, and the progress maths including overspend.
 
 ## 7. Debts
 

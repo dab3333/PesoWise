@@ -59,7 +59,9 @@ public class ReportService {
         return transactions.findTotalsByCategory(userId, from, to).stream()
                 .map(row -> new CategoryTotalResponse(
                         row.getCategoryId(), row.getCategoryName(), row.getColor(),
-                        Kind.valueOf(row.getKind()), orZero(row.getTotal())))
+                        Kind.valueOf(row.getKind()),
+                        row.getBucket() == null ? null : Bucket.valueOf(row.getBucket()),
+                        orZero(row.getTotal())))
                 .toList();
     }
 
