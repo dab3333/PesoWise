@@ -6,6 +6,7 @@ import { AuthPage } from '@/pages/AuthPage'
 import { BudgetsPage } from '@/pages/BudgetsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { DebtsPage } from '@/pages/DebtsPage'
+import { GoalsPage } from '@/pages/GoalsPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { TransactionsPage } from '@/pages/TransactionsPage'
@@ -73,10 +74,10 @@ export default function App() {
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="budgets" element={<BudgetsPage />} />
         <Route path="debts" element={<DebtsPage />} />
+        <Route path="goals" element={<GoalsPage />} />
         <Route path="settings" element={<SettingsPage />} />
 
         {/* Replaced by real pages as each build step lands. */}
-        <Route path="goals" element={<PlaceholderPage title="Goals" step="step 8" />} />
         <Route path="recurring" element={<PlaceholderPage title="Recurring" step="step 9" />} />
       </Route>
 

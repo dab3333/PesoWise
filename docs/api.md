@@ -188,8 +188,86 @@ continuous axis.
 
 ## planning-service
 
-Goals and recurring bills are documented as their build steps land (steps 8–9 in
-[build-plan.md](build-plan.md)).
+Recurring bills are documented when step 9 lands (see [build-plan.md](build-plan.md)).
+
+### Savings goals
+
+Follows the same contribution-to-ledger pattern as debt payments, with two deliberate differences:
+**the target is editable**, and **over-saving is allowed**.
+
+#### `GET /api/goals`
+
+```json
+{
+  "totalTarget": 90000.00,
+  "totalSaved": 12500.00,
+  "activeCount": 1,
+  "achievedCount": 0,
+  "goals": [
+    { "id": "…", "name": "Bagong laptop", "targetAmount": 50000.00,
+      "savedAmount": 12500.00, "remaining": 37500.00, "percentComplete": 25.0,
+      "targetDate": "2026-12-31", "daysUntilTarget": 142,
+      "monthlyNeeded": 7500.00, "achieved": false, "behindSchedule": false,
+      "archived": false, "note": "para sa work", "contributionCount": 1 }
+  ]
+}
+```
+
+- **`savedAmount` is derived**, never stored — it is `SUM(contributions)`, read in one grouped query.
+  A goal has no invariant to protect (unlike a debt, where you cannot pay more than you owe), so a
+  stored total would be duplication that can drift.
+- **`achieved` is not a column either** — it is simply `saved >= target`.
+- `remaining` is **zero once the target is met, never negative.** Over-saving is a good outcome, not
+  a shortfall.
+- `monthlyNeeded` is what to set aside each remaining month to land on the target date — the number
+  that turns a goal into a plan. Counts calendar months **inclusive of the current one**, so a target
+  inside this month asks for the whole shortfall rather than dividing by zero, and **rounds up**, so
+  following it always reaches the target. Null when there is no target date or the goal is achieved.
+- `behindSchedule` is only true for an unmet goal whose target date has passed.
+- **Archived goals are excluded from the totals** but still returned in the list.
+
+#### `POST /api/goals` → 201 · `PUT /api/goals/{id}`
+
+```json
+{ "name": "Bagong laptop", "targetAmount": "50000.00",
+  "targetDate": "2026-12-31", "note": "para sa work", "archived": false }
+```
+
+`targetDate`, `note` and `archived` are optional. **The target amount is editable**, unlike a debt's
+principal: revising what you are saving for is normal and invalidates nothing — every contribution
+stays exactly as recorded, and the percentage simply recalculates.
+
+`archived` hides a goal while keeping its history — the alternative to deleting it.
+
+#### `DELETE /api/goals/{id}` → 204
+
+Deletes the goal and its contribution records. **The ledger transactions are kept** — the money
+really did move. Archive instead to keep the history.
+
+#### `GET /api/goals/{id}/contributions`
+
+```json
+[ { "id": "…", "goalId": "…", "amount": 12500.00, "contributedOn": "2026-08-15",
+    "note": "13th month", "ledgerTxnId": "af99a45e-…" } ]
+```
+
+#### `POST /api/goals/{id}/contributions` → 201
+
+```json
+{ "amount": "12500.00", "contributedOn": "2026-08-15",
+  "accountId": "…", "categoryId": "…", "note": "13th month" }
+```
+
+A dual write, exactly as for debt payments: the contribution is stored here *and* posted to the
+ledger tagged `sourceType: GOAL_CONTRIBUTION`. Choosing a `SAVINGS`-bucket category means the money
+counts toward the savings share of the 70-20-10 split.
+
+**Contributing beyond the target is accepted** (201), unlike overpaying a debt (400) — saving more
+than planned is not a mistake to be prevented.
+
+#### `DELETE /api/goals/{id}/contributions/{contributionId}` → 204
+
+Undo. Removes the contribution **and the ledger transaction it created**.
 
 ### Debts
 

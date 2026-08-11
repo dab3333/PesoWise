@@ -17,7 +17,7 @@ deployable and the history reads as the build order.
 | 5 | Report endpoints + Dashboard page | ✅ Done |
 | 6 | planning-service budgets + 70-20-10 suggester | ✅ Done |
 | 7 | planning-service debts | ✅ Done |
-| 8 | planning-service savings goals | ⬜ Not started |
+| 8 | planning-service savings goals | ✅ Done |
 | 9 | planning-service recurring bills + scheduler | ⬜ Not started |
 | 10 | Test matrix + README | ⬜ Not started |
 
@@ -130,9 +130,45 @@ totals; paying a settled debt 409.
 propagation, undo reversing both sides and reopening a settled debt, overpayment, cross-debt payment
 isolation, user scoping, and the overdue rule.
 
-## 8. Savings goals
+## 8. Savings goals ✅
 
-Same contribution-to-ledger pattern as debts, so the two share one approach.
+Goals with contributions, undo, archiving, and the Goals page.
+
+**The dual-write path is now shared.** Rather than copying the ordering rule into a second service
+class, it was extracted into `LedgerWriter` and both `DebtService` and `GoalService` call it. The
+rule is subtle enough — call the ledger *before* the local commit so a failure means "nothing
+happened" — that having it stated in one place matters more than the handful of lines saved.
+`DebtServiceTest` was updated for the refactor and stayed green, which is the point of having had it.
+
+Where goals deliberately differ from debts:
+
+- **No stored total.** `savedAmount` is `SUM(contributions)`, read in one grouped query. A debt keeps
+  a balance column because it has an invariant to protect — you cannot pay more than you owe — and a
+  CHECK constraint enforcing it. A goal has no such bound, so a stored total would be duplication
+  with nothing to guard. "Achieved" is likewise computed, not a column.
+- **Over-saving is allowed.** Contributing past the target returns 201, where overpaying a debt
+  returns 400. Saving more than planned is not a mistake to prevent. `remaining` clamps at zero
+  rather than going negative, because "₱0 to go" is the useful reading.
+- **The target amount is editable**, unlike a debt's principal. Revising what you are saving for is
+  normal and invalidates nothing; contributions stay exactly as recorded.
+- **Archiving exists** as the alternative to deleting — it hides a goal but keeps its history.
+
+`monthlyNeeded` is the feature that turns a goal into a plan: the shortfall spread over the remaining
+calendar months, counted **inclusive of the current one** so a target inside this month asks for the
+whole amount rather than dividing by zero, and **rounded up** so following it always reaches the
+target.
+
+*Verified against real Postgres across both services:* a ₱12,500 contribution raising `savedAmount`
+**and** the 70-20-10 SAVINGS bucket 14,000 → 26,500, with the transaction tagged
+`GOAL_CONTRIBUTION`; `monthlyNeeded` recomputing 10,000 → 7,500 after it; over-saving accepted with
+`remaining` at 0 and 145% complete; editing the target from 50,000 to 90,000 leaving contributions
+untouched; undo restoring the total **and** the ledger transaction returning 404; zero amount 400;
+another user's goal 404.
+
+*Tests:* 20 more in planning-service (62 total) — derived totals, the achieved threshold, over-saving,
+all four `monthlyNeeded` cases including round-up and the current-month edge, behind-schedule only
+applying to unmet goals, the dual write's captured payload, ledger-failure propagation, undo, and
+archived goals leaving the totals.
 
 ## 9. Recurring bills
 

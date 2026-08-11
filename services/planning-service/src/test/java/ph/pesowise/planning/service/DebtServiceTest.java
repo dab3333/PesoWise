@@ -13,11 +13,8 @@ import ph.pesowise.planning.api.DebtDtos.DebtResponse;
 import ph.pesowise.planning.api.DebtDtos.PaymentRequest;
 import ph.pesowise.planning.domain.Debt;
 import ph.pesowise.planning.domain.DebtPayment;
-import ph.pesowise.planning.ledger.LedgerClient;
-import ph.pesowise.planning.ledger.LedgerDtos.Kind;
 import ph.pesowise.planning.ledger.LedgerDtos.SourceType;
-import ph.pesowise.planning.ledger.LedgerDtos.SourcedTransactionRequest;
-import ph.pesowise.planning.ledger.LedgerDtos.Transaction;
+import ph.pesowise.planning.ledger.LedgerWriter;
 import ph.pesowise.planning.repo.DebtPaymentRepository;
 import ph.pesowise.planning.repo.DebtRepository;
 import ph.pesowise.planning.web.BadRequestException;
@@ -54,7 +51,7 @@ class DebtServiceTest {
     private DebtPaymentRepository payments;
 
     @Mock
-    private LedgerClient ledger;
+    private LedgerWriter ledger;
 
     private DebtService debtService;
 
@@ -71,8 +68,8 @@ class DebtServiceTest {
     }
 
     private void givenLedgerAccepts() {
-        when(ledger.createSourcedTransaction(eq(USER), any())).thenReturn(
-                new Transaction(LEDGER_TXN, new BigDecimal("1000"), TODAY, Kind.EXPENSE));
+        when(ledger.post(eq(USER), eq(SourceType.DEBT_PAYMENT), any(), any(), any(), any(), any(), any()))
+                .thenReturn(LEDGER_TXN);
         when(payments.save(any(DebtPayment.class))).thenAnswer(call -> call.getArgument(0));
     }
 
@@ -89,7 +86,8 @@ class DebtServiceTest {
         debtService.recordPayment(USER, debt.getId(), payment("2500.00"));
 
         assertThat(debt.getBalance()).isEqualByComparingTo("7500.00");
-        verify(ledger).createSourcedTransaction(eq(USER), any(SourcedTransactionRequest.class));
+        verify(ledger).post(eq(USER), eq(SourceType.DEBT_PAYMENT), eq(debt.getId()),
+                eq(ACCOUNT), eq(CATEGORY), eq(new BigDecimal("2500.00")), eq(TODAY), any());
     }
 
     @Test
@@ -100,18 +98,12 @@ class DebtServiceTest {
 
         debtService.recordPayment(USER, debt.getId(), payment("2500.00"));
 
-        ArgumentCaptor<SourcedTransactionRequest> sent =
-                ArgumentCaptor.forClass(SourcedTransactionRequest.class);
-        verify(ledger).createSourcedTransaction(eq(USER), sent.capture());
+        ArgumentCaptor<String> note = ArgumentCaptor.forClass(String.class);
+        // sourceId is the audit link that makes an orphaned transaction discoverable.
+        verify(ledger).post(eq(USER), eq(SourceType.DEBT_PAYMENT), eq(debt.getId()),
+                eq(ACCOUNT), eq(CATEGORY), eq(new BigDecimal("2500.00")), eq(TODAY), note.capture());
 
-        SourcedTransactionRequest request = sent.getValue();
-        assertThat(request.sourceType()).isEqualTo(SourceType.DEBT_PAYMENT);
-        // This is the audit link that makes an orphaned transaction discoverable.
-        assertThat(request.sourceId()).isEqualTo(debt.getId());
-        assertThat(request.amount()).isEqualByComparingTo("2500.00");
-        assertThat(request.accountId()).isEqualTo(ACCOUNT);
-        assertThat(request.categoryId()).isEqualTo(CATEGORY);
-        assertThat(request.note()).contains("Kuya Ben").contains("sa GCash");
+        assertThat(note.getValue()).contains("Kuya Ben").contains("sa GCash");
     }
 
     @Test
@@ -147,7 +139,7 @@ class DebtServiceTest {
                 .hasMessageContaining("outstanding");
 
         assertThat(debt.getBalance()).isEqualByComparingTo("10000.00");
-        verify(ledger, never()).createSourcedTransaction(any(), any());
+        verify(ledger, never()).post(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -166,7 +158,7 @@ class DebtServiceTest {
     @DisplayName("a ledger failure propagates, so the balance change rolls back with the transaction")
     void ledgerFailurePropagates() {
         Debt debt = givenDebt(Debt.Direction.OWED_BY_ME, "10000.00");
-        when(ledger.createSourcedTransaction(eq(USER), any()))
+        when(ledger.post(eq(USER), eq(SourceType.DEBT_PAYMENT), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("ledger unreachable"));
 
         assertThatThrownBy(() -> debtService.recordPayment(USER, debt.getId(), payment("2500.00")))
@@ -191,7 +183,7 @@ class DebtServiceTest {
 
         assertThat(debt.getBalance()).isEqualByComparingTo("10000.00");
         // Leaving the transaction behind would make the two records disagree.
-        verify(ledger).deleteTransaction(USER, LEDGER_TXN);
+        verify(ledger).remove(USER, LEDGER_TXN);
         verify(payments).delete(stored);
     }
 

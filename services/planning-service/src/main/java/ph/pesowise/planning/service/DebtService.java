@@ -12,10 +12,8 @@ import ph.pesowise.planning.api.DebtDtos.PaymentRequest;
 import ph.pesowise.planning.api.DebtDtos.PaymentResponse;
 import ph.pesowise.planning.domain.Debt;
 import ph.pesowise.planning.domain.DebtPayment;
-import ph.pesowise.planning.ledger.LedgerClient;
 import ph.pesowise.planning.ledger.LedgerDtos.SourceType;
-import ph.pesowise.planning.ledger.LedgerDtos.SourcedTransactionRequest;
-import ph.pesowise.planning.ledger.LedgerDtos.Transaction;
+import ph.pesowise.planning.ledger.LedgerWriter;
 import ph.pesowise.planning.repo.DebtPaymentRepository;
 import ph.pesowise.planning.repo.DebtRepository;
 import ph.pesowise.planning.web.BadRequestException;
@@ -45,9 +43,9 @@ public class DebtService {
 
     private final DebtRepository debts;
     private final DebtPaymentRepository payments;
-    private final LedgerClient ledger;
+    private final LedgerWriter ledger;
 
-    public DebtService(DebtRepository debts, DebtPaymentRepository payments, LedgerClient ledger) {
+    public DebtService(DebtRepository debts, DebtPaymentRepository payments, LedgerWriter ledger) {
         this.debts = debts;
         this.payments = payments;
         this.ledger = ledger;
@@ -132,16 +130,9 @@ public class DebtService {
      * Records a payment: reduces the balance here <em>and</em> writes the cash movement to the
      * ledger, so a debt payment shows up in spending reports instead of living in a silo.
      *
-     * <p><strong>Ordering.</strong> The ledger is called inside this transaction, before the commit.
-     * If that call fails, the exception rolls back the balance change — so the failure mode is
-     * "nothing happened", which is recoverable by retrying. The reverse order would risk a reduced
-     * balance with no matching transaction, which looks like money that vanished.
-     *
-     * <p>The remaining window is small but real: if the ledger write succeeds and this transaction
-     * then fails to commit, the ledger keeps a transaction with no payment behind it. That orphan is
-     * discoverable precisely because the ledger stores {@code source_type} and {@code source_id} —
-     * which is what those columns are for. A single-user app does not warrant a saga to close a
-     * window this narrow, but it is a real limitation rather than an oversight.
+     * <p>The ledger is written from inside this transaction, before it commits, so a failure there
+     * rolls the balance change back. See {@link LedgerWriter} for the ordering rule and the one
+     * failure window it leaves open.
      */
     @Transactional
     public PaymentResponse recordPayment(UUID userId, UUID debtId, PaymentRequest request) {
@@ -159,23 +150,18 @@ public class DebtService {
 
         // Paying a debt is money out; being repaid is money in. The category the client chose
         // carries the direction in the ledger, so the two cannot disagree.
-        Transaction ledgerTxn = ledger.createSourcedTransaction(userId, new SourcedTransactionRequest(
-                request.accountId(),
-                request.categoryId(),
-                request.amount(),
-                request.paidOn(),
-                noteFor(debt, request),
-                SourceType.DEBT_PAYMENT,
-                debt.getId()));
+        UUID ledgerTxnId = ledger.post(
+                userId, SourceType.DEBT_PAYMENT, debt.getId(),
+                request.accountId(), request.categoryId(), request.amount(), request.paidOn(),
+                noteFor(debt, request));
 
         DebtPayment payment = payments.save(DebtPayment.create(
                 userId, debt.getId(), request.amount(), request.paidOn(),
-                trimToNull(request.note()), ledgerTxn == null ? null : ledgerTxn.id()));
+                trimToNull(request.note()), ledgerTxnId));
 
         debt.applyPayment(request.amount());
 
-        log.info("Recorded {} against debt {} (ledger txn {})",
-                request.amount(), debt.getId(), payment.getLedgerTxnId());
+        log.info("Recorded {} against debt {}", request.amount(), debt.getId());
 
         return PaymentResponse.from(payment);
     }
@@ -193,10 +179,7 @@ public class DebtService {
                 .filter(found -> found.getDebtId().equals(debtId))
                 .orElseThrow(() -> new NotFoundException("Payment"));
 
-        if (payment.getLedgerTxnId() != null) {
-            ledger.deleteTransaction(userId, payment.getLedgerTxnId());
-        }
-
+        ledger.remove(userId, payment.getLedgerTxnId());
         payments.delete(payment);
         debt.reversePayment(payment.getAmount());
     }

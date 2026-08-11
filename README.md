@@ -65,9 +65,9 @@ Testcontainers cannot reach the Docker daemon on every machine — see
 
 ## Status
 
-Steps 1–7 of 10 in [build-plan.md](docs/build-plan.md). Working and verified: auth, the full
-ledger (accounts, categories, transactions, reports), budgets with the 70-20-10 suggester, and debt
-tracking in both directions — Dashboard, Transactions, Budgets, Debts and Settings pages included.
-Remaining: savings goals and recurring bills.
+Steps 1–8 of 10 in [build-plan.md](docs/build-plan.md). Working and verified: auth, the full
+ledger (accounts, categories, transactions, reports), budgets with the 70-20-10 suggester, debt
+tracking in both directions, and savings goals — Dashboard, Transactions, Budgets, Debts, Goals and
+Settings pages included. Remaining: recurring bills.
 
-Tests: 69 passing (gateway 9, auth 8, ledger 10, planning 42).
+Tests: 89 passing (gateway 9, auth 8, ledger 10, planning 62).
