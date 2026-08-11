@@ -111,6 +111,43 @@ the stored limits in memory, return `{limit, spent, remaining, percentUsed}`. No
 ledger-service *and* records the returned id locally. Money exists in exactly one place — the
 ledger — and planning-service holds only a pointer to it.
 
+#### The dual-write
+
+A debt payment has to land in two databases: the balance here, the cash movement in the ledger.
+There is no distributed transaction, so the ordering is a deliberate choice.
+
+The ledger is called **inside** the local transaction, before it commits:
+
+```
+@Transactional
+  load debt, validate the amount fits
+  ── Feign ──▶ ledger: POST /api/transactions/sourced
+  save payment row with the returned ledger_txn_id
+  reduce the balance
+commit
+```
+
+If the Feign call fails, the exception rolls the local transaction back, so the failure mode is
+**"nothing happened"** — recoverable by retrying. The reverse order would risk a reduced balance
+with no matching transaction, which reads to the user as money that vanished.
+
+One window remains: if the ledger write succeeds and the local commit then fails, the ledger keeps a
+transaction with no payment behind it. That orphan is discoverable precisely because the ledger
+stores `source_type` and `source_id` — which is what those columns are for. A single-user app does
+not warrant a saga to close a window this narrow, but it is a real limitation rather than an
+oversight.
+
+Two consequences worth stating:
+
+- The remote call happens while a database transaction is open, which holds row locks for the
+  duration. Acceptable here because writes are single-user and rare; it would not be at scale, and
+  is the first thing to revisit if a broker is introduced.
+- **Undo deletes the ledger transaction too.** Reversing a payment while leaving the cash movement
+  behind would make the two records disagree, which is worse than either outcome alone.
+
+Deleting a *debt*, by contrast, keeps its ledger transactions. The money really did move; erasing
+that would rewrite the user's spending history.
+
 ## Request flow
 
 A dashboard load:

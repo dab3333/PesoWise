@@ -16,7 +16,7 @@ deployable and the history reads as the build order.
 | 4 | ledger-service transactions + Transactions page | ✅ Done |
 | 5 | Report endpoints + Dashboard page | ✅ Done |
 | 6 | planning-service budgets + 70-20-10 suggester | ✅ Done |
-| 7 | planning-service debts | ⬜ Not started |
+| 7 | planning-service debts | ✅ Done |
 | 8 | planning-service savings goals | ⬜ Not started |
 | 9 | planning-service recurring bills + scheduler | ⬜ Not started |
 | 10 | Test matrix + README | ⬜ Not started |
@@ -95,10 +95,40 @@ income estimated from last month when omitted; copy-previous-month; zero limit 4
 *Tests:* planning-service 26/26 — the suggester's proportional split, even-split fallback, rounding
 drift, history window, income estimation, and the progress maths including overspend.
 
-## 7. Debts
+## 7. Debts ✅
 
-Both directions (owed by me, owed to me). A payment reduces the balance **and** posts a
-transaction to ledger-service via Feign, storing the returned `ledger_txn_id`.
+Both directions (owed by me, owed to me), with payments, undo, settle, and the Debts page.
+
+**The dual write is the substance of this step.** A payment reduces the balance here *and* posts a
+transaction to ledger-service, so a debt payment appears in spending reports rather than living in a
+silo. The ordering, the failure modes, and the one window that stays open are documented in
+[architecture.md](architecture.md#the-dual-write) — the short version is that the ledger is called
+before the local commit, so a failure means "nothing happened".
+
+Decisions worth recording:
+
+- **Undo deletes the ledger transaction too.** Reversing a payment while leaving the cash movement
+  behind would make the two records disagree, which is worse than either outcome alone.
+- **Deleting a debt keeps its transactions.** The money really did move; erasing it would rewrite
+  the user's spending history.
+- **`accountId` and `categoryId` are required, not inferred.** Which wallet the money came from and
+  how it should appear in reports are the user's decisions. The category also carries the direction,
+  so paying records an expense and being repaid records income — they cannot disagree.
+- **Overpayment is rejected, not clamped** — it usually means a typo, and absorbing it hides the
+  mistake.
+- **Principal and direction are immutable** once created; both would invalidate existing payments.
+- Interest rate is stored and displayed but **not accrued** — compounding is out of scope.
+
+*Verified against real Postgres across both services:* both directions created; net position;
+payment dropping the balance to ₱7,500 **and** August ledger expense rising 29,500 → 32,000 with the
+transaction tagged `DEBT_PAYMENT` and pointing back at the debt; a repayment on money owed *to* the
+user recording INCOME; overpayment 400 with nothing written; undo restoring the balance **and** the
+ledger transaction returning 404; settling in full flipping to SETTLED and dropping out of the
+totals; paying a settled debt 409.
+
+*Tests:* 16 more in planning-service (42 total) — the dual write's captured payload, ledger-failure
+propagation, undo reversing both sides and reopening a settled debt, overpayment, cross-debt payment
+isolation, user scoping, and the overdue rule.
 
 ## 8. Savings goals
 

@@ -1,7 +1,9 @@
 package ph.pesowise.planning.ledger;
 
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -49,4 +51,12 @@ public interface LedgerClient {
     LedgerDtos.Transaction createSourcedTransaction(
             @RequestHeader("X-User-Id") UUID userId,
             @RequestBody LedgerDtos.SourcedTransactionRequest request);
+
+    /**
+     * Removes a transaction this service created, when the originating payment or contribution is
+     * deleted. Without this, reversing a payment would leave the cash movement in the ledger and
+     * the two records would disagree.
+     */
+    @DeleteMapping("/api/transactions/{id}")
+    void deleteTransaction(@RequestHeader("X-User-Id") UUID userId, @PathVariable("id") UUID id);
 }

@@ -188,8 +188,95 @@ continuous axis.
 
 ## planning-service
 
-Debts, goals, and recurring bills are documented as their build steps land (steps 7–9 in
+Goals and recurring bills are documented as their build steps land (steps 8–9 in
 [build-plan.md](build-plan.md)).
+
+### Debts
+
+Tracks utang in **both directions**: `OWED_BY_ME` and `OWED_TO_ME`.
+
+#### `GET /api/debts`
+
+```json
+{
+  "totalOwedByMe": 10000.00,
+  "totalOwedToMe": 3000.00,
+  "netPosition": -7000.00,
+  "debts": [
+    { "id": "…", "name": "Utang kay Kuya Ben", "direction": "OWED_BY_ME",
+      "counterparty": "Ben Reyes", "principal": 10000.00, "balance": 7500.00,
+      "paidAmount": 2500.00, "percentPaid": 25.0, "interestRate": 2.500,
+      "dueDate": "2026-12-31", "daysUntilDue": 142, "overdue": false,
+      "status": "ACTIVE", "paymentCount": 1 }
+  ]
+}
+```
+
+- `netPosition` is `owedToMe − owedByMe`. Negative means you owe more than you are owed.
+- **Settled debts are excluded from the totals** but still returned in the list.
+- `overdue` is only ever true for an `ACTIVE` debt — a settled one is never overdue, however long
+  ago its due date was.
+- `interestRate` is **recorded and displayed only.** The MVP does not accrue interest; doing that
+  properly needs a compounding schedule, which is out of scope.
+
+#### `POST /api/debts` → 201
+
+```json
+{ "name": "Utang kay Kuya Ben", "direction": "OWED_BY_ME", "counterparty": "Ben Reyes",
+  "principal": "10000.00", "interestRate": "2.500", "dueDate": "2026-12-31" }
+```
+
+`counterparty`, `interestRate` and `dueDate` are optional — "Pag-IBIG loan" needs no name. A new
+debt starts wholly outstanding (`balance == principal`).
+
+#### `PUT /api/debts/{id}`
+
+Takes `name`, `counterparty`, `interestRate`, `dueDate` only. **`principal` and `direction` are
+fixed after creation** — changing either would silently invalidate every payment already recorded.
+The balance moves through payments alone.
+
+#### `DELETE /api/debts/{id}` → 204
+
+Removes the debt and its payment records. **The ledger transactions those payments created are
+kept** — the money really did move, and deleting the record of it would silently rewrite the user's
+spending history.
+
+#### `GET /api/debts/{id}/payments`
+
+```json
+[ { "id": "…", "debtId": "…", "amount": 2500.00, "paidOn": "2026-08-25",
+    "note": "partial", "ledgerTxnId": "ccfafffe-…" } ]
+```
+
+#### `POST /api/debts/{id}/payments` → 201
+
+```json
+{ "amount": "2500.00", "paidOn": "2026-08-25",
+  "accountId": "…", "categoryId": "…", "note": "partial" }
+```
+
+**This is a dual write.** It reduces the balance here *and* posts a transaction to ledger-service,
+tagged `sourceType: DEBT_PAYMENT` with `sourceId` set to the debt — so a debt payment appears in
+spending reports and budget progress instead of living in a silo. The returned `ledgerTxnId` is
+stored on the payment.
+
+`accountId` and `categoryId` are **required, not inferred**: which wallet the money moved through
+and how it should appear in reports are the user's decisions. The category also carries the
+direction, so paying a debt records an expense and being repaid records income — the two can never
+disagree.
+
+- Overpaying returns **400**, rather than clamping. An overpayment usually means a typo, and
+  silently absorbing it would hide the mistake.
+- Paying an already-settled debt returns **409**.
+- Paying the exact balance sets `status: SETTLED`.
+- If ledger-service is unreachable the whole operation fails with **503** and the balance is
+  unchanged — see the ordering note in [architecture.md](architecture.md#the-dual-write).
+
+#### `DELETE /api/debts/{id}/payments/{paymentId}` → 204
+
+Undo. Restores the balance, reopens the debt if it had been settled, **and deletes the ledger
+transaction the payment created** — otherwise the cash movement would linger and the two records
+would disagree.
 
 ### Budgets
 
