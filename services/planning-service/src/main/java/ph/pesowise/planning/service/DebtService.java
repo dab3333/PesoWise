@@ -62,12 +62,13 @@ public class DebtService {
         for (Debt debt : found) {
             responses.add(toResponse(debt, payments.countByDebtId(debt.getId())));
 
-            // Settled debts contribute nothing to the outstanding totals.
+            // Settled debts contribute nothing to the outstanding totals. Accrued interest counts
+            // too — it is genuinely owed, and leaving it out would understate what's outstanding.
             if (debt.getStatus() == Debt.Status.ACTIVE) {
                 if (debt.getDirection() == Debt.Direction.OWED_BY_ME) {
-                    owedByMe = owedByMe.add(debt.getBalance());
+                    owedByMe = owedByMe.add(debt.totalOutstanding());
                 } else {
-                    owedToMe = owedToMe.add(debt.getBalance());
+                    owedToMe = owedToMe.add(debt.totalOutstanding());
                 }
             }
         }
@@ -77,6 +78,10 @@ public class DebtService {
 
     @Transactional
     public DebtResponse create(UUID userId, DebtRequest request) {
+        if (request.interestMethod() != null && request.interestRate() == null) {
+            throw new BadRequestException("Choose an interest rate to go with that accrual method.");
+        }
+
         Debt debt = debts.save(Debt.create(
                 userId,
                 request.name().trim(),
@@ -84,22 +89,31 @@ public class DebtService {
                 trimToNull(request.counterparty()),
                 request.principal(),
                 request.interestRate(),
+                request.interestMethod(),
+                request.startDate(),
                 request.dueDate()));
 
         return toResponse(debt, 0);
     }
 
     /**
-     * Updates the descriptive fields only. Principal and direction are fixed: changing either would
-     * silently invalidate every payment already recorded against the debt.
+     * Updates the descriptive fields only. Principal, direction, and start date are fixed:
+     * changing principal or direction would silently invalidate every payment already recorded
+     * against the debt, and changing the start date would retroactively change what should
+     * already have accrued.
      */
     @Transactional
     public DebtResponse update(UUID userId, UUID debtId, DebtUpdateRequest request) {
         Debt debt = require(userId, debtId);
 
+        if (request.interestMethod() != null && request.interestRate() == null) {
+            throw new BadRequestException("Choose an interest rate to go with that accrual method.");
+        }
+
         debt.setName(request.name().trim());
         debt.setCounterparty(trimToNull(request.counterparty()));
         debt.setInterestRate(request.interestRate());
+        debt.setInterestMethod(request.interestMethod());
         debt.setDueDate(request.dueDate());
 
         return toResponse(debt, payments.countByDebtId(debtId));
@@ -142,11 +156,19 @@ public class DebtService {
             throw new ConflictException("\"%s\" is already settled.".formatted(debt.getName()));
         }
         // Rejected rather than clamped: an overpayment usually means a typo, and silently
-        // absorbing it would hide the mistake.
-        if (request.amount().compareTo(debt.getBalance()) > 0) {
+        // absorbing it would hide the mistake. The boundary is principal plus accrued interest
+        // now, not principal alone — interest is real money owed too.
+        BigDecimal totalOutstanding = debt.totalOutstanding();
+        if (request.amount().compareTo(totalOutstanding) > 0) {
             throw new BadRequestException(
-                    "That is more than the ₱%s still outstanding.".formatted(debt.getBalance().toPlainString()));
+                    "That is more than the ₱%s still outstanding.".formatted(totalOutstanding.toPlainString()));
         }
+
+        // Interest first: a partial payment always clears what's owed for time already passed
+        // before it touches what was originally borrowed.
+        BigDecimal[] split = debt.allocate(request.amount());
+        BigDecimal principalPart = split[0];
+        BigDecimal interestPart = split[1];
 
         // Paying a debt is money out; being repaid is money in. The category the client chose
         // carries the direction in the ledger, so the two cannot disagree.
@@ -156,10 +178,10 @@ public class DebtService {
                 noteFor(debt, request));
 
         DebtPayment payment = payments.save(DebtPayment.create(
-                userId, debt.getId(), request.amount(), request.paidOn(),
+                userId, debt.getId(), request.amount(), principalPart, interestPart, request.paidOn(),
                 trimToNull(request.note()), ledgerTxnId));
 
-        debt.applyPayment(request.amount());
+        debt.applyPayment(principalPart, interestPart);
 
         log.info("Recorded {} against debt {}", request.amount(), debt.getId());
 
@@ -181,7 +203,7 @@ public class DebtService {
 
         ledger.remove(userId, payment.getLedgerTxnId());
         payments.delete(payment);
-        debt.reversePayment(payment.getAmount());
+        debt.reversePayment(payment.getPrincipalPart(), payment.getInterestPart());
     }
 
     private Debt require(UUID userId, UUID debtId) {
@@ -212,7 +234,9 @@ public class DebtService {
         return new DebtResponse(
                 debt.getId(), debt.getName(), debt.getDirection(), debt.getCounterparty(),
                 debt.getPrincipal(), debt.getBalance(), paid, percentPaid,
-                debt.getInterestRate(), debt.getDueDate(), daysUntilDue,
+                debt.getInterestRate(), debt.getInterestMethod(),
+                debt.getAccruedInterest(), debt.getInterestPaidTotal(), debt.totalOutstanding(),
+                debt.getStartDate(), debt.getDueDate(), daysUntilDue,
                 // A settled debt is never overdue, however long ago its due date was.
                 daysUntilDue != null && daysUntilDue < 0 && debt.getStatus() == Debt.Status.ACTIVE,
                 debt.getStatus(), (int) paymentCount);

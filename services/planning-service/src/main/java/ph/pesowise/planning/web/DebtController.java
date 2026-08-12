@@ -12,12 +12,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import ph.pesowise.planning.api.DebtDtos.AccrualSummary;
 import ph.pesowise.planning.api.DebtDtos.DebtOverview;
 import ph.pesowise.planning.api.DebtDtos.DebtRequest;
 import ph.pesowise.planning.api.DebtDtos.DebtResponse;
 import ph.pesowise.planning.api.DebtDtos.DebtUpdateRequest;
 import ph.pesowise.planning.api.DebtDtos.PaymentRequest;
 import ph.pesowise.planning.api.DebtDtos.PaymentResponse;
+import ph.pesowise.planning.service.DebtInterestService;
 import ph.pesowise.planning.service.DebtService;
 
 import java.util.List;
@@ -28,9 +30,11 @@ import java.util.UUID;
 public class DebtController {
 
     private final DebtService debtService;
+    private final DebtInterestService debtInterestService;
 
-    public DebtController(DebtService debtService) {
+    public DebtController(DebtService debtService, DebtInterestService debtInterestService) {
         this.debtService = debtService;
+        this.debtInterestService = debtInterestService;
     }
 
     @GetMapping
@@ -85,5 +89,22 @@ public class DebtController {
             @PathVariable UUID id,
             @PathVariable UUID paymentId) {
         debtService.deletePayment(userId, id, paymentId);
+    }
+
+    /**
+     * Runs the monthly interest-accrual pass immediately, instead of waiting until the 1st.
+     *
+     * <p><b>Administrators only</b>, for the same reason {@code POST /api/recurring/run} is: the
+     * pass operates on every user's interest-bearing debts, not just the caller's. It sits outside
+     * {@code /api/admin/**}, so the gateway's prefix rule does not cover it and the check happens
+     * here.
+     */
+    @PostMapping("/accrue")
+    public AccrualSummary accrueNow(@RequestHeader(Headers.USER_ID) UUID userId,
+                                    @RequestHeader(name = Headers.USER_ROLE, required = false) String role) {
+        if (!Headers.ADMIN_ROLE.equals(role)) {
+            throw new ForbiddenException("Running the interest accrual pass is an administrator action.");
+        }
+        return debtInterestService.runAccrualPass();
     }
 }

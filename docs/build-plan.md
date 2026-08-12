@@ -33,7 +33,7 @@ with root causes.
 | # | Phase | Status |
 | --- | --- | --- |
 | 1 | Roles, email verification, password reset | ✅ Done |
-| 2 | Debt interest accrual | ⬜ Deferred — skipped for now |
+| 2 | Debt interest accrual | ✅ Done |
 | 3 | admin-service (5th service) | ✅ Done |
 | 4 | Admin UI, About page, feedback | ✅ Done |
 | 5 | Landing and auth page | ✅ Done |
@@ -412,34 +412,62 @@ until Phase 3. The rule is covered by unit tests now and gets its live check the
 
 *Tests:* auth-service 26, gateway 17, planning-service 101 — all green.
 
-## Phase 2. Debt interest ⬜
+## Phase 2. Debt interest ✅
 
-Independent of every other phase; can run in parallel.
+Built last, after being deliberately deferred through Phases 3–5 — independent of every other
+phase, so nothing else needed to wait for it.
 
-`V2__debts.sql` carries `CHECK (balance <= principal)`, payments are rejected above `balance`, and
-both `paidAmount` and `percentPaid` derive from `principal − balance`. Interest touches all four.
+`V2__debts.sql` carried `CHECK (balance <= principal)`, payments were rejected above `balance`,
+and both `paidAmount` and `percentPaid` derived from `principal − balance`. Interest touched all
+four, which is why the design avoids fighting the constraint rather than working around it:
+interest never enters `balance`. `balance` keeps meaning *outstanding principal*, and accrued
+interest lives in its own column. The check dropped to `balance >= 0` regardless — it stopped
+being a meaningful invariant once interest existed.
 
-**The design avoids fighting the constraint rather than working around it:** interest never enters
-`balance`. `balance` keeps meaning *outstanding principal* and accrued interest is a separate
-column. The check is dropped regardless — it stops being a meaningful invariant once interest
-exists, and `balance >= 0` is the real guarantee.
+Simplified by one axis from the original plan: `interest_method` is `SIMPLE` or `COMPOUND`, full
+stop — no separate `MONTHLY`/`ANNUAL` compounding choice. The accrual job only ever runs
+monthly, so an annual-compounding option would have needed its own partial-period bookkeeping for
+a distinction nothing was asking for.
 
-`debts` gains `start_date`, `interest_method` (SIMPLE/COMPOUND), `compounding`,
-`accrued_interest`, `interest_paid_total` and `last_accrued_on`. `debt_payments` gains
-`principal_part` and `interest_part` — stored rather than recomputed, because reversing a payment
-has to restore both columns exactly as they were.
+`debts` gained `start_date`, `interest_method`, `accrued_interest`, `interest_paid_total`, and
+`last_accrued_on` (`V5__debt_interest.sql`). `debt_payments` gained `principal_part` and
+`interest_part` — stored rather than recomputed, since reversing a payment has to restore both
+columns exactly as they were. Payments apply to interest first, then principal
+(`Debt.allocate`); a debt settles only once both reach zero. `percentPaid` needed no change at
+all — it was already `(principal − balance) / principal`, which never touched interest to begin
+with.
 
-Payments apply to interest first, then principal. Settled means both are zero. `percentPaid` is
-redefined as percent of *principal* repaid and documented as such; interest is reported
-separately.
+A monthly job accrues (`DebtInterestScheduler` → `DebtInterestService` → `DebtInterestAccruals`),
+reusing the `RecurringOccurrences` idempotency pattern exactly: a claim table
+(`debt_interest_accruals`) with a unique `(debt_id, period)` index, claimed *before* the debt is
+touched, so a restarted scheduler or a retried catch-up loop cannot double-accrue. Catch-up is
+capped at 12 months, same reasoning and same limit as recurring bills. **No ledger write** —
+accrued interest is owed, not paid, and writing it would cross the boundary that ledger-service
+owns only money that has actually moved. A manual `POST /api/debts/accrue` exists for testing
+without waiting for the 1st, admin-gated the same way `POST /api/recurring/run` is, for the same
+reason: it accrues interest for every user's debts, not just the caller's.
 
-A monthly job accrues, reusing the `RecurringOccurrences` idempotency pattern — a claim table
-with a unique `(debt_id, period)` index — which is already proven in this codebase. **No ledger
-write:** accrued interest is owed, not paid, and writing it would violate the boundary that
-ledger-service owns money which has actually moved.
+Outstanding totals — the debt list, the admin overview's `totalOwedByUsers`/`totalOwedToUsers` —
+now include accrued interest, not just principal. Excluding it would have understated what's
+genuinely owed the moment interest existed.
 
-`DebtServiceTest` currently has **zero** interest tests; the one debt created with a rate never
-asserts on it.
+*Verified against the running stack:* created a debt with a 12% rate back-dated three months,
+ran the accrual pass, and got exactly ₱300 (₱100/month simple, matching a hand-computed `rate /
+100 / 12 × balance`). **Ran it again immediately — a clean no-op**, the same idempotency proof
+the recurring bills got. Paid ₱500 against it: the split came back as ₱300 interest + ₱200
+principal, interest-first as designed. Deleted that payment: both columns returned to their
+exact pre-payment values. Confirmed the overpayment boundary is `balance + accruedInterest`, not
+`balance` alone — a payment one peso over that combined figure was rejected, one peso under (i.e.
+exactly matching it) settled the debt. A non-admin got 403 from `/api/debts/accrue`; an admin got
+a real summary.
+
+*Tests:* planning-service 129 (up from 101) — `DebtTest` (new, 8: the accrual math in isolation —
+SIMPLE not compounding, COMPOUND folding in unpaid interest, the cursor, interest-first
+allocation), `DebtInterestAccrualsTest` (new, 6: the idempotency guard, mirroring
+`RecurringOccurrencesTest`), `DebtInterestServiceTest` (new, 5: the catch-up loop and one-failure
+isolation, mirroring `RecurringServiceTest`), and `DebtServiceTest` grew from 15 to 25 (payment
+splitting, the new overpayment boundary, settling only when both columns are zero, reversal
+restoring both). All 207 tests across the five services stayed green throughout.
 
 ## Phase 3. admin-service ✅
 

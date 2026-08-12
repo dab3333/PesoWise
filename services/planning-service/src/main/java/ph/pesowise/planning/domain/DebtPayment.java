@@ -30,6 +30,13 @@ public class DebtPayment {
     @Column(nullable = false, precision = 15, scale = 2, updatable = false)
     private BigDecimal amount;
 
+    /** {@code amount}, split — interest first. Zero on any payment recorded before interest existed. */
+    @Column(name = "principal_part", nullable = false, precision = 15, scale = 2, updatable = false)
+    private BigDecimal principalPart;
+
+    @Column(name = "interest_part", nullable = false, precision = 15, scale = 2, updatable = false)
+    private BigDecimal interestPart;
+
     @Column(name = "paid_on", nullable = false, updatable = false)
     private LocalDate paidOn;
 
@@ -50,6 +57,8 @@ public class DebtPayment {
             UUID userId,
             UUID debtId,
             BigDecimal amount,
+            BigDecimal principalPart,
+            BigDecimal interestPart,
             LocalDate paidOn,
             String note,
             UUID ledgerTxnId) {
@@ -58,6 +67,8 @@ public class DebtPayment {
         payment.debtId = debtId;
         payment.userId = userId;
         payment.amount = amount;
+        payment.principalPart = principalPart;
+        payment.interestPart = interestPart;
         payment.paidOn = paidOn;
         payment.note = note;
         payment.ledgerTxnId = ledgerTxnId;
@@ -79,6 +90,14 @@ public class DebtPayment {
 
     public BigDecimal getAmount() {
         return amount;
+    }
+
+    public BigDecimal getPrincipalPart() {
+        return principalPart;
+    }
+
+    public BigDecimal getInterestPart() {
+        return interestPart;
     }
 
     public LocalDate getPaidOn() {

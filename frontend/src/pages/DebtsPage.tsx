@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
@@ -7,6 +8,8 @@ import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
   DIRECTION_LABELS,
+  INTEREST_METHOD_LABELS,
+  useAccrueInterestNow,
   useDebtPayments,
   useDebts,
   useDeleteDebt,
@@ -16,19 +19,23 @@ import {
   type Debt,
   type DebtDirection,
   type DebtInput,
+  type InterestMethod,
 } from '@/api/useDebts'
 import { ApiError } from '@/lib/api'
 import { formatDate, formatPeso, toDateKey, toNumber } from '@/lib/format'
 
 export function DebtsPage() {
+  const { user } = useAuth()
   const debts = useDebts()
   const deleteDebt = useDeleteDebt()
+  const accrueNow = useAccrueInterestNow()
 
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Debt | null>(null)
   const [paying, setPaying] = useState<Debt | null>(null)
   const [viewing, setViewing] = useState<Debt | null>(null)
   const [removing, setRemoving] = useState<Debt | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const data = debts.data
   const active = (data?.debts ?? []).filter((debt) => debt.status === 'ACTIVE')
@@ -41,6 +48,39 @@ export function DebtsPage() {
         subtitle="Utang in both directions — what you owe, and what is owed to you."
         action={<Button onClick={() => setCreating(true)}>Add a debt</Button>}
       />
+
+      {/* Admin-only, same reasoning as Recurring's "Run the check now": the endpoint accrues
+          interest for every user's debts, not just the caller's, so it's gated on the backend —
+          a regular user would just get a 403 here. */}
+      {isAdmin(user) && (data?.debts.length ?? 0) > 0 && (
+        <div className="mb-4 flex justify-end">
+          <Button
+            variant="secondary"
+            loading={accrueNow.isPending}
+            onClick={() =>
+              accrueNow.mutate(undefined, {
+                onSuccess: (summary) =>
+                  setNotice(
+                    summary.accrued === 0
+                      ? 'Nothing was due.'
+                      : `Interest accrued for ${summary.accrued} debt-month(s)${
+                          summary.alreadyRecorded > 0 ? `, ${summary.alreadyRecorded} already done` : ''
+                        }.${summary.notes.length > 0 ? ` ${summary.notes.join(' ')}` : ''}`,
+                  ),
+                onError: () => setNotice('Could not run the accrual check just now.'),
+              })
+            }
+          >
+            Run interest accrual now
+          </Button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="mb-4">
+          <Alert>{notice}</Alert>
+        </div>
+      )}
 
       {(data?.debts.length ?? 0) > 0 && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -169,7 +209,13 @@ function DebtRow({
             {debt.counterparty && <span>{debt.counterparty} · </span>}
             {formatPeso(debt.paidAmount)} of {formatPeso(debt.principal)} paid
             {debt.interestRate !== null && toNumber(debt.interestRate) > 0 && (
-              <span> · {toNumber(debt.interestRate)}% interest</span>
+              <span>
+                {' '}
+                · {toNumber(debt.interestRate)}%{debt.interestMethod ? ' interest' : ' (reference only)'}
+              </span>
+            )}
+            {debt.interestMethod && toNumber(debt.accruedInterest) > 0 && (
+              <span className="text-expense"> · {formatPeso(debt.accruedInterest)} interest owed</span>
             )}
           </p>
         </div>
@@ -177,7 +223,7 @@ function DebtRow({
           {debt.status === 'SETTLED' ? (
             <span className="text-income">Settled</span>
           ) : (
-            <>{formatPeso(debt.balance)} left</>
+            <>{formatPeso(debt.totalOutstanding)} left</>
           )}
         </p>
       </div>
@@ -232,6 +278,8 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
     interestRate: debt?.interestRate !== null && debt?.interestRate !== undefined
       ? String(debt.interestRate)
       : '',
+    interestMethod: debt?.interestMethod ?? null,
+    startDate: debt?.startDate ?? toDateKey(new Date()),
     dueDate: debt?.dueDate ?? '',
   }))
   const [error, setError] = useState<string | null>(null)
@@ -330,8 +378,43 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
           value={form.interestRate ?? ''}
           onChange={(event) => setForm({ ...form, interestRate: event.target.value })}
           error={fieldErrors.interestRate}
-          hint="Recorded for reference — PesoWise does not compute interest yet."
+          hint={
+            form.interestMethod
+              ? 'Annual rate — accrues monthly at a twelfth of this.'
+              : 'Choose an accrual method below to have PesoWise calculate interest automatically.'
+          }
         />
+
+        <Select
+          label="Interest accrual"
+          value={form.interestMethod ?? ''}
+          onChange={(event) =>
+            setForm({ ...form, interestMethod: (event.target.value || null) as InterestMethod | null })
+          }
+        >
+          <option value="">Off — record the rate for reference only</option>
+          {Object.entries(INTEREST_METHOD_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+
+        {debt === null ? (
+          <DateField
+            label="Start date"
+            value={form.startDate}
+            onChange={(event) => setForm({ ...form, startDate: event.target.value })}
+            error={fieldErrors.startDate}
+            hint="When accrual starts counting from — fixed once the debt exists."
+          />
+        ) : (
+          form.interestMethod && (
+            <p className="-mt-2 text-xs text-muted">
+              Accruing since {formatDate(debt.startDate)} — the start date is fixed after creation.
+            </p>
+          )
+        )}
 
         <DateField
           label="Due date"
@@ -406,7 +489,11 @@ function PaymentDialog({ debt, onClose }: { debt: Debt; onClose: () => void }) {
         {error && <Alert>{error}</Alert>}
 
         <p className="text-sm text-muted">
-          {formatPeso(debt.balance)} still outstanding on {debt.name}.
+          {formatPeso(debt.totalOutstanding)} still outstanding on {debt.name}
+          {debt.interestMethod && toNumber(debt.accruedInterest) > 0 && (
+            <span> ({formatPeso(debt.accruedInterest)} of it interest — paid off first)</span>
+          )}
+          .
         </p>
 
         <MoneyInput
@@ -500,6 +587,13 @@ function HistoryDialog({ debt, onClose }: { debt: Debt; onClose: () => void }) {
                 <p className="tnum text-sm font-medium text-ink">{formatPeso(payment.amount)}</p>
                 <p className="truncate text-xs text-muted">
                   {formatDate(payment.paidOn)}
+                  {toNumber(payment.interestPart) > 0 && (
+                    <span>
+                      {' '}
+                      · {formatPeso(payment.interestPart)} interest, {formatPeso(payment.principalPart)}{' '}
+                      principal
+                    </span>
+                  )}
                   {payment.note && ` · ${payment.note}`}
                 </p>
               </div>
