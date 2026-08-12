@@ -37,7 +37,7 @@ with root causes.
 | 3 | admin-service (5th service) | ✅ Done |
 | 4 | Admin UI, About page, feedback | ✅ Done |
 | 5 | Landing and auth page | ✅ Done |
-| 6 | Deployment readiness | ⬜ Not started |
+| 6 | Deployment readiness | ✅ Done |
 
 ---
 
@@ -614,24 +614,55 @@ migrated as `SMALLINT`, but the entity's `Integer` field maps to Hibernate's def
 and `ddl-auto: validate` rejected the mismatch outright at startup. Fixed with a follow-up
 migration (`V5`) rather than editing `V4`, since Flyway had already recorded and applied it.
 
-## Phase 6. Deployment readiness ⬜
+## Phase 6. Deployment readiness ✅
 
-`docker-compose.prod.yml` as an override: stop publishing the four Postgres ports and the gateway
-port, leaving only the frontend reachable behind Caddy. `architecture.md` already states this
-invariant; the current Compose file violates it as a dev affordance.
+`docker-compose.prod.yml` as an override, layered on with
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`: it resets the
+`ports` list to empty on all four Postgres containers, the gateway, and the frontend, and adds a
+`caddy` service publishing only 80/443. `architecture.md`'s invariant ("service ports are never
+published to the host in production") was true in intent but not in the Compose file itself —
+the dev file publishes everything as a local-access affordance, and only the override actually
+enforces the invariant.
 
-Because the frontend container stays on the VM behind Caddy, the nginx `/api` proxy still
-applies — requests remain same-origin, `VITE_API_URL` stays empty, and **CORS stays irrelevant**.
-That is the main practical advantage over the Vercel split.
+**One real gotcha, caught by running `docker compose config` rather than assuming the merge
+worked:** Compose's default list-merge behaviour *concatenates* `ports` across `-f` files rather
+than replacing it — an override that just re-declares `ports: []` would leave every dev port
+published underneath it. The fix is the `!reset []` YAML merge-control tag (Compose v2.24+),
+which explicitly clears a list instead of appending to it. Confirmed by generating the merged
+config and checking that `gateway`, `frontend`, and all four Postgres services have no `ports:`
+key at all, and that `caddy` is the only service that does.
 
-`.github/workflows/ci.yml` does not exist yet. Beyond the obvious value, it unlocks something
-specific: **GitHub Actions has a working Docker daemon, so `mvn verify -Pintegration` can run the
-Testcontainers tests there** — the ones that cannot run on this machine and were recorded as a
-known gap at the end of v1.0. That alone justifies adding CI.
+Caddy fronts the frontend container and gets free, cron-free Let's Encrypt renewal from a single
+`{$PESOWISE_DOMAIN} { reverse_proxy frontend:80 }` block — the domain substitutes via Caddy's own
+`{$VAR}` environment expansion. Because the frontend container stays behind Caddy on the same VM,
+the nginx `/api` proxy inside it still applies: requests remain same-origin, `VITE_API_URL` stays
+empty, and CORS stays irrelevant — the same property that already holds in dev via the Vite
+proxy, and the main practical advantage over splitting the frontend onto a separate host. The one
+place CORS gets configured at all — the gateway's `CORS_ALLOWED_ORIGIN` — is switched from the
+dev localhost origin to `PUBLIC_URL` in the prod override, so a client hitting the gateway
+directly (bypassing the same-origin proxy) isn't trusted from an arbitrary origin either.
 
-Hardening: regenerate `JWT_SECRET` and every database password, set `CORS_ALLOWED_ORIGIN` and
-`PUBLIC_URL` to the real hostname, confirm both trusted headers are rejected when spoofed, and
-confirm no service port answers from outside the VM.
+`.github/workflows/ci.yml` did not exist before this phase. Two jobs beyond the obvious
+build/test value: a `backend-test` matrix (`mvn test`, one entry per service, unit tests only) and
+a `backend-integration` matrix (`mvn verify -Pintegration`, the four services that carry
+Testcontainers suites — gateway has none). **GitHub Actions' runners have a working Docker
+daemon**, which is exactly what this machine does not — see the Testcontainers note in
+`development.md`. CI is therefore the first place these integration tests will actually run
+green, not just compile. A third job typechecks and lints the frontend (`tsc -b`, `oxlint`).
+
+`docs/deployment.md` is new: provisioning (a domain is mandatory — Let's Encrypt refuses to
+certify a bare IP), first boot, the exact `.env` values that must change from their dev defaults,
+a post-deploy verification checklist (certificate valid, `nmap` shows only 80/443, spoofed
+`X-User-Id`/`X-User-Role` still rejected), per-database `pg_dump` backups (four now, not one),
+log access, the upgrade command, and rotating `JWT_SECRET` (which signs every session out
+instantly, with no dual-secret grace period — worth calling out explicitly rather than
+discovering it during an actual rotation).
+
+**Not done, and deliberately so:** no VM was actually provisioned or DNS configured in this
+phase — that requires the domain and Oracle Cloud account described as open blockers, which are
+the reader's to resolve, not something to fabricate here. What's shippable now is everything the
+repo can prove without those: the override merges cleanly, the invariant holds in the generated
+config, and CI is wired up to actually run on the next push.
 
 ## Explicitly deferred to v1.3
 

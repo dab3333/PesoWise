@@ -1,0 +1,6 @@
+# Automatic HTTPS: Caddy requests and renews a Let's Encrypt certificate for PESOWISE_DOMAIN
+# with no cron job, provided the domain's A/AAAA record already points at this host and 80/443
+# are reachable from the internet (both required for the ACME HTTP-01 challenge).
+{$PESOWISE_DOMAIN} {
+	reverse_proxy frontend:80
+}

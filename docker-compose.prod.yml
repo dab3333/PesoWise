@@ -1,0 +1,60 @@
+# Production override — used together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What changes from the dev stack:
+#   - No service port is published to the host except Caddy's 80/443. architecture.md's
+#     invariant ("service ports are never published to the host in production") is a dev
+#     affordance in docker-compose.yml alone; this file is what actually enforces it.
+#   - Caddy fronts the frontend container, terminating TLS via automatic Let's Encrypt using
+#     PESOWISE_DOMAIN.
+#   - The gateway's CORS_ALLOWED_ORIGIN switches from the dev localhost origin to the real
+#     public origin (PUBLIC_URL) — same-origin browser traffic still makes CORS moot in
+#     practice, but a misconfigured client hitting the gateway directly should not be trusted
+#     from just anywhere.
+#
+# `!reset []` requires Compose v2.24+ (the YAML merge-control tags). Without it, Compose
+# concatenates the base file's `ports` list with this one instead of replacing it, which would
+# silently leave every dev port published in "production".
+
+services:
+  postgres-auth:
+    ports: !reset []
+
+  postgres-ledger:
+    ports: !reset []
+
+  postgres-planning:
+    ports: !reset []
+
+  postgres-admin:
+    ports: !reset []
+
+  gateway:
+    ports: !reset []
+    environment:
+      CORS_ALLOWED_ORIGIN: ${PUBLIC_URL}
+
+  frontend:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pesowise-caddy
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      PESOWISE_DOMAIN: ${PESOWISE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [pesowise]
+
+volumes:
+  caddy-data:
+  caddy-config:
