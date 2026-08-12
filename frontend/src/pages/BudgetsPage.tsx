@@ -127,7 +127,10 @@ export function BudgetsPage() {
                         : `${formatPeso(Math.abs(toNumber(line.remaining ?? 0)))} over`
                     }
                   />
-                  <div className="mt-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  {/* Hover-reveal only makes sense where hover exists — on touch there is no
+                      hover event, so opacity-0 with no override left these clickable but
+                      invisible. Visible by default below sm; hover-gated only at desktop widths. */}
+                  <div className="mt-1 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                     <Button
                       variant="ghost"
                       className="px-2 py-1 text-xs"

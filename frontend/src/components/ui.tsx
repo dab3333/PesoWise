@@ -17,9 +17,13 @@ export function Card({ children, className }: { children: ReactNode; className?:
 
 export function CardTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <h2 className="text-lg font-semibold">{children}</h2>
-      {action}
+    // flex-wrap lets a long action (e.g. the 70-20-10 caption) drop to its own full-width line
+    // below the title on a narrow screen, rather than squeezing onto the title's row and wrapping
+    // its text mid-word — the title and the action must each stay one line, not necessarily the
+    // same line as each other.
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <h2 className="text-lg font-semibold whitespace-nowrap">{children}</h2>
+      {action && <div className="whitespace-nowrap">{action}</div>}
     </div>
   )
 }
@@ -57,7 +61,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       // Disabling while loading is what actually prevents a double submit.
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium',
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium',
         'transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         buttonVariants[variant],
         className,

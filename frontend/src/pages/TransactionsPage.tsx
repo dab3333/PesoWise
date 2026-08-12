@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Modal, ConfirmDialog } from '@/components/Modal'
-import { Select, MoneyInput } from '@/components/form'
+import { DateField, Select, MoneyInput } from '@/components/form'
 import { Alert, Button, Card, EmptyState, Field } from '@/components/ui'
 import {
   useAccounts,
@@ -14,7 +14,7 @@ import {
 } from '@/api/useLedger'
 import type { Transaction, TransactionInput } from '@/api/types'
 import { ApiError } from '@/lib/api'
-import { formatDate, formatPeso, toDateKey, toMonthKey } from '@/lib/format'
+import { formatDate, formatPeso, formatSignedPeso, toDateKey, toMonthKey } from '@/lib/format'
 
 const PAGE_SIZE = 25
 
@@ -62,38 +62,45 @@ export function TransactionsPage() {
         action={<Button onClick={() => setCreating(true)}>Add transaction</Button>}
       />
 
-      {/* One filter row scoping the table below it. */}
-      <div className="mb-4 flex flex-wrap items-end gap-3">
+      {/* One filter row scoping the table below it. Below sm, Category and Account are forced
+          onto their own shared row (sm:contents un-wraps them back into the main row at sm+,
+          where there's room for all three side by side) — otherwise, depending on exactly how
+          wide the viewport is, one of the two could end up sharing the row with MonthNav instead
+          of its sibling select, which reads as broken rather than as an intentional two-column
+          layout. */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <MonthNav month={month} onChange={(next) => changeFilter(() => setMonth(next))} />
 
-        <div className="min-w-40">
-          <Select
-            label="Category"
-            value={categoryId}
-            onChange={(event) => changeFilter(() => setCategoryId(event.target.value))}
-          >
-            <option value="">All categories</option>
-            {(categories.data ?? []).map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <div className="flex gap-3 sm:contents">
+          <div className="min-w-0 flex-1 sm:min-w-40 sm:flex-initial">
+            <Select
+              label="Category"
+              value={categoryId}
+              onChange={(event) => changeFilter(() => setCategoryId(event.target.value))}
+            >
+              <option value="">All categories</option>
+              {(categories.data ?? []).map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </Select>
+          </div>
 
-        <div className="min-w-40">
-          <Select
-            label="Account"
-            value={accountId}
-            onChange={(event) => changeFilter(() => setAccountId(event.target.value))}
-          >
-            <option value="">All accounts</option>
-            {(accounts.data ?? []).map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </Select>
+          <div className="min-w-0 flex-1 sm:min-w-40 sm:flex-initial">
+            <Select
+              label="Account"
+              value={accountId}
+              onChange={(event) => changeFilter(() => setAccountId(event.target.value))}
+            >
+              <option value="">All accounts</option>
+              {(accounts.data ?? []).map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
       </div>
 
@@ -105,7 +112,55 @@ export function TransactionsPage() {
           />
         ) : (
           <div className={transactions.isFetching ? 'opacity-50 transition-opacity' : ''}>
-            <div className="overflow-x-auto">
+            {/* Below md: a compact card list, two lines per row, nothing needing a horizontal
+                scroll to see — a scrollable wide table is the wrong shape for a screen this
+                narrow, and this is the page people check most often. md+ has the room for a
+                proper table, so it keeps one. */}
+            <ul className="divide-y divide-line md:hidden">
+              {rows.map((row) => (
+                <li key={row.id} className="flex items-center gap-3 px-4 py-3">
+                  <span
+                    aria-hidden
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ background: row.categoryColor }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{row.categoryName}</p>
+                    <p className="truncate text-xs text-muted">
+                      {formatDate(row.txnDate)} · {row.accountName}
+                      {row.note && ` · ${row.note}`}
+                    </p>
+                  </div>
+                  {/* Its own column, right-aligned, ahead of a fixed-width trailing slot — kept
+                      out of the name's flex box, whose available width (and so the amount's
+                      right edge, if it sat inside) would otherwise shift between rows depending
+                      on whether that row shows two icon buttons or the shorter "auto" label. */}
+                  <p
+                    className={`tnum shrink-0 text-right text-sm font-medium ${
+                      row.kind === 'EXPENSE' ? 'text-expense' : 'text-income'
+                    }`}
+                  >
+                    {formatSignedPeso(row.amount, row.kind)}
+                  </p>
+                  <div className="flex w-[4.25rem] shrink-0 justify-end">
+                    {row.sourceType === 'MANUAL' ? (
+                      <span className="flex gap-0.5">
+                        <IconButton label="Edit" onClick={() => setEditing(row)}>
+                          <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+                        </IconButton>
+                        <IconButton label="Delete" onClick={() => setDeleting(row)}>
+                          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                        </IconButton>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-subtle">auto</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[40rem] text-sm">
                 <thead className="bg-surface-muted text-left">
                   <tr>
@@ -321,13 +376,11 @@ function TransactionDialog({
           ))}
         </Select>
 
-        <Field
+        <DateField
           label="Date"
-          type="date"
           value={form.txnDate}
           onChange={(event) => setForm({ ...form, txnDate: event.target.value })}
           error={fieldErrors.txnDate}
-          required
         />
 
         <Field

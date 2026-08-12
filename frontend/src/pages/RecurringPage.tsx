@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
-import { MoneyInput, Select } from '@/components/form'
+import { DateField, MoneyInput, Select } from '@/components/form'
 import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
@@ -170,33 +170,39 @@ function DueRow({ bill, onNotice }: { bill: Bill; onNotice: (message: string) =>
   }
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">{bill.name}</p>
+    // Name+amount and meta+actions are separate rows — sharing one flex-wrap row let the fixed-
+    // width amount and buttons squeeze the name column down to almost nothing at ~440px instead
+    // of the row itself wrapping, which read as a margin/spacing bug rather than the layout issue
+    // it actually was.
+    <li className="py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="min-w-0 truncate text-sm font-medium text-ink">{bill.name}</p>
+        <span className="tnum shrink-0 text-sm font-medium text-ink">{formatPeso(bill.amount)}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-xs text-muted">
           {bill.daysUntilDue < 0
             ? `Was due ${formatDate(bill.nextRunDate)} — ${Math.abs(bill.daysUntilDue)} day(s) ago`
             : `Due ${formatDate(bill.nextRunDate)}`}
         </p>
+        <span className="ml-auto flex flex-wrap shrink-0 gap-1">
+          <Button
+            className="px-3 py-1 text-xs"
+            loading={post.isPending}
+            onClick={() => handle(post, 'record')}
+          >
+            Record it
+          </Button>
+          <Button
+            variant="ghost"
+            className="px-2 py-1 text-xs"
+            loading={skip.isPending}
+            onClick={() => handle(skip, 'skip')}
+          >
+            Skip
+          </Button>
+        </span>
       </div>
-      <span className="tnum shrink-0 text-sm font-medium text-ink">{formatPeso(bill.amount)}</span>
-      <span className="flex shrink-0 gap-1">
-        <Button
-          className="px-3 py-1 text-xs"
-          loading={post.isPending}
-          onClick={() => handle(post, 'record')}
-        >
-          Record it
-        </Button>
-        <Button
-          variant="ghost"
-          className="px-2 py-1 text-xs"
-          loading={skip.isPending}
-          onClick={() => handle(skip, 'skip')}
-        >
-          Skip
-        </Button>
-      </span>
     </li>
   )
 }
@@ -213,32 +219,35 @@ function BillRow({
   onRemove: () => void
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">
+    // See DueRow above for why this is two rows rather than one flex-wrap row.
+    <li className="py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="min-w-0 truncate text-sm font-medium text-ink">
           {bill.name}
           {!bill.autoPost && (
             <span className="ml-2 text-xs font-normal text-muted">needs confirming</span>
           )}
         </p>
+        <span className="tnum shrink-0 text-sm font-medium text-ink">{formatPeso(bill.amount)}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-xs text-muted">
           {FREQUENCY_LABELS[bill.frequency]}
           {bill.active && <> · next {formatDate(bill.nextRunDate)}</>}
           {bill.note && <> · {bill.note}</>}
         </p>
+        <span className="ml-auto flex flex-wrap shrink-0 gap-1">
+          <Button variant="ghost" onClick={onHistory} className="px-2 py-1 text-xs">
+            History ({bill.postedCount})
+          </Button>
+          <Button variant="ghost" onClick={onEdit} className="px-2 py-1 text-xs">
+            Edit
+          </Button>
+          <Button variant="ghost" onClick={onRemove} className="px-2 py-1 text-xs">
+            Delete
+          </Button>
+        </span>
       </div>
-      <span className="tnum shrink-0 text-sm font-medium text-ink">{formatPeso(bill.amount)}</span>
-      <span className="flex shrink-0 gap-1">
-        <Button variant="ghost" onClick={onHistory} className="px-2 py-1 text-xs">
-          History ({bill.postedCount})
-        </Button>
-        <Button variant="ghost" onClick={onEdit} className="px-2 py-1 text-xs">
-          Edit
-        </Button>
-        <Button variant="ghost" onClick={onRemove} className="px-2 py-1 text-xs">
-          Delete
-        </Button>
-      </span>
     </li>
   )
 }
@@ -323,9 +332,8 @@ function BillDialog({ bill, onClose }: { bill: Bill | null; onClose: () => void 
           ))}
         </Select>
 
-        <Field
+        <DateField
           label={bill ? 'Next due' : 'First due'}
-          type="date"
           value={form.nextRunDate}
           onChange={(event) => setForm({ ...form, nextRunDate: event.target.value })}
           error={fieldErrors.nextRunDate}
@@ -334,7 +342,6 @@ function BillDialog({ bill, onClose }: { bill: Bill | null; onClose: () => void 
               ? 'A bill set to the 31st stays on the 31st, using the last day in shorter months.'
               : undefined
           }
-          required
         />
 
         <Select

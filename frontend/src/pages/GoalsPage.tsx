@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
-import { MoneyInput, Select } from '@/components/form'
+import { DateField, MoneyInput, Select } from '@/components/form'
 import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
@@ -198,7 +198,9 @@ function GoalRow({
           <span className="text-xs text-muted">Target was {formatDate(goal.targetDate)}</span>
         )}
 
-        <span className="ml-auto flex gap-1">
+        {/* flex-wrap: buttons drop to a second row as a whole rather than a label wrapping
+            mid-word at a phone width. */}
+        <span className="ml-auto flex flex-wrap gap-1">
           {onContribute && (
             <Button onClick={onContribute} className="px-3 py-1 text-xs">
               Add savings
@@ -279,9 +281,8 @@ function GoalDialog({ goal, onClose }: { goal: Goal | null; onClose: () => void 
           </p>
         )}
 
-        <Field
+        <DateField
           label="Target date"
-          type="date"
           value={form.targetDate ?? ''}
           onChange={(event) => setForm({ ...form, targetDate: event.target.value })}
           error={fieldErrors.targetDate}
@@ -384,13 +385,11 @@ function ContributionDialog({ goal, onClose }: { goal: Goal; onClose: () => void
           required
         />
 
-        <Field
+        <DateField
           label="Date"
-          type="date"
           value={contributedOn}
           onChange={(event) => setContributedOn(event.target.value)}
           error={fieldErrors.contributedOn}
-          required
         />
 
         <Select

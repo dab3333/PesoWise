@@ -37,10 +37,6 @@ export function Modal({
         onClose()
       }}
       onClose={onClose}
-      // Clicking the backdrop means clicking the dialog element itself, outside its content box.
-      onClick={(event) => {
-        if (event.target === ref.current) onClose()
-      }}
       className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-line bg-surface p-0 text-body backdrop:bg-slate-900/40"
     >
       <div className="flex items-center justify-between border-b border-line px-5 py-4">

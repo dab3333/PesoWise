@@ -78,7 +78,27 @@ function AccountsCard() {
             <span className="tnum shrink-0 text-sm font-medium text-ink">
               {formatPeso(account.balance)}
             </span>
-            <span className="flex shrink-0 gap-1">
+            {/* Icons on mobile — "Edit"/"Remove" text next to a peso amount is what was pushing
+                this row to wrap at phone widths. Desktop has the room to keep the labels. */}
+            <span className="flex shrink-0 gap-1 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setEditing(account)}
+                aria-label={`Edit ${account.name}`}
+                className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-muted hover:text-body"
+              >
+                <Pencil />
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleting(account)}
+                aria-label={`Remove ${account.name}`}
+                className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-muted hover:text-expense"
+              >
+                <Cross />
+              </button>
+            </span>
+            <span className="hidden shrink-0 gap-1 sm:flex">
               <Button variant="ghost" onClick={() => setEditing(account)} className="px-2 py-1 text-xs">
                 Edit
               </Button>

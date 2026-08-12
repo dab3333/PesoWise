@@ -16,7 +16,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function readPreference(): ThemePreference {
   const stored = localStorage.getItem(STORAGE_KEY)
-  return stored === 'light' || stored === 'dark' ? stored : 'system'
+  // Light is the default until the user says otherwise — 'system' is opt-in via Settings, not
+  // the out-of-the-box behaviour, so a fresh install doesn't quietly inherit the OS's choice.
+  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'light'
 }
 
 function systemTheme(): ResolvedTheme {
@@ -51,8 +53,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(next)
-    if (next === 'system') localStorage.removeItem(STORAGE_KEY)
-    else localStorage.setItem(STORAGE_KEY, next)
+    localStorage.setItem(STORAGE_KEY, next)
   }, [])
 
   const value = useMemo(

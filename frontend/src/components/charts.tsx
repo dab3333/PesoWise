@@ -24,6 +24,32 @@ const AXIS_TEXT = 'var(--muted)'
 
 const axisTick = { fontSize: 11, fill: AXIS_TEXT }
 
+/**
+ * Two independent touch quirks stack here:
+ * 1. Recharts only recomputes the active tooltip point on `touchmove`, never on `touchstart` or
+ *    `touchend` (see RechartsWrapper's touch handlers) — a real finger tap usually has enough
+ *    jitter to fire a touchmove anyway, which is why this half-works on real devices, but a clean
+ *    tap does nothing.
+ * 2. The browser follows every tap with a synthetic mouse-compatibility sequence, ending in a
+ *    `mouseleave` fired 10-25ms after the click as it parks the emulated pointer elsewhere. That
+ *    leave reaches Recharts' own onMouseLeave and unconditionally hides the tooltip — with no way
+ *    to intercept it, since Recharts dispatches its hide action before calling any handler we pass.
+ * Firing a synthetic mousemove on touchstart reuses the (already-correct) mouse-hover path to fix
+ * #1, and a second, delayed one re-asserts it after the trailing leave from #2 has had time to
+ * land, so the tap's result is always what's left on screen.
+ */
+function forwardTouchAsHover(_state: unknown, event: React.TouchEvent<SVGGraphicsElement>) {
+  const touch = event.touches[0]
+  if (!touch) return
+  const target = event.currentTarget
+  const fire = () =>
+    target.dispatchEvent(
+      new MouseEvent('mousemove', { bubbles: true, clientX: touch.clientX, clientY: touch.clientY }),
+    )
+  fire()
+  setTimeout(fire, 80)
+}
+
 /** Shared tooltip shell so both charts read identically. */
 function TooltipShell({ title, rows }: { title: string; rows: Array<[string, string, string?]> }) {
   return (
@@ -69,8 +95,13 @@ export function SpendByCategoryChart({ data }: { data: CategoryTotal[] }) {
           rows={rows.map((row) => [row.categoryName, formatPeso(row.total)])}
         />
       ) : (
-        <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 56, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" height={height} className="chart-enter">
+          <BarChart
+            data={rows}
+            layout="vertical"
+            margin={{ top: 0, right: 56, bottom: 0, left: 0 }}
+            onTouchStart={forwardTouchAsHover}
+          >
             {/* Solid hairline verticals only — never dashed, which would read as a threshold. */}
             <CartesianGrid horizontal={false} stroke={GRID} />
             <XAxis
@@ -149,8 +180,12 @@ export function DailyTrendChart({ data }: { data: DailyTotal[] }) {
             .map((row) => [formatDate(row.date), formatPeso(row.income), formatPeso(row.expense)])}
         />
       ) : (
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" height={240} className="chart-enter">
+          <LineChart
+            data={rows}
+            margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+            onTouchStart={forwardTouchAsHover}
+          >
             <CartesianGrid vertical={false} stroke={GRID} />
             <XAxis dataKey="day" tick={axisTick} axisLine={false} tickLine={false} minTickGap={16} />
             <YAxis

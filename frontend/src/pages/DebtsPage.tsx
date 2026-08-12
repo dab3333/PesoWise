@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
-import { MoneyInput, Select } from '@/components/form'
+import { DateField, MoneyInput, Select } from '@/components/form'
 import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
@@ -199,7 +199,9 @@ function DebtRow({
               : `Due ${formatDate(debt.dueDate)}`}
           </span>
         )}
-        <span className="ml-auto flex gap-1">
+        {/* flex-wrap: four buttons don't fit on one line at a phone width, so whole buttons
+            drop to a second row rather than a single button's label wrapping mid-word. */}
+        <span className="ml-auto flex flex-wrap gap-1">
           {onPay && (
             <Button onClick={onPay} className="px-3 py-1 text-xs">
               Record payment
@@ -290,6 +292,12 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
           <option value="OWED_BY_ME">I owe this</option>
           <option value="OWED_TO_ME">Someone owes me</option>
         </Select>
+        {debt !== null && (
+          <p className="-mt-2 text-xs text-muted">
+            Direction is fixed after creation — flipping it would invert every payment already
+            recorded. Remove this debt and add it again if you got the direction wrong.
+          </p>
+        )}
 
         <Field
           label="Who?"
@@ -325,9 +333,8 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
           hint="Recorded for reference — PesoWise does not compute interest yet."
         />
 
-        <Field
+        <DateField
           label="Due date"
-          type="date"
           value={form.dueDate ?? ''}
           onChange={(event) => setForm({ ...form, dueDate: event.target.value })}
           error={fieldErrors.dueDate}
@@ -410,13 +417,11 @@ function PaymentDialog({ debt, onClose }: { debt: Debt; onClose: () => void }) {
           required
         />
 
-        <Field
+        <DateField
           label="Date"
-          type="date"
           value={paidOn}
           onChange={(event) => setPaidOn(event.target.value)}
           error={fieldErrors.paidOn}
-          required
         />
 
         <Select

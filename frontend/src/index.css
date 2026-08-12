@@ -158,4 +158,82 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-accent;
   }
+
+  /* Recharts makes its root SVG focusable (tabIndex 0, for keyboard data navigation) — but on the
+     bar chart specifically, a tap can instead land focus on an internal z-index portal <g> that
+     Recharts marks tabIndex="-1" ("should not be tabbable", per its own source comment) without
+     ever setting outline:none on it, so the browser's default outline (a stark black rectangle)
+     still renders. Blanking :focus on every element inside a chart and re-adding our jade ring
+     only for :focus-visible on the root surface covers both that case and the plain surface case
+     the line chart hits, without losing the keyboard-accessible ring either surface should show. */
+  .recharts-wrapper *:focus {
+    outline: none;
+  }
+
+  .recharts-wrapper .recharts-surface:focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+
+  /* A subtle cue that navigation landed on something new, not a layout shift — kept short and
+     small enough to read as "responsive" rather than "animated". Respects reduced-motion. */
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .page-transition {
+    animation: page-enter 180ms ease-out;
+  }
+
+  /* Plays once per mount, not per re-render — so a month change or a data refetch that keeps the
+     same chart instance on screen does not replay it, only actually arriving at/back to the chart
+     does (leaving the page unmounts it; returning mounts it fresh). */
+  @keyframes chart-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .chart-enter {
+    animation: chart-enter 280ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chart-enter {
+      animation: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page-transition {
+      animation: none;
+    }
+  }
+
+  /* iOS Safari (and some Android WebViews) auto-zoom the whole viewport when a focused form
+     control renders below 16px — every input/select here is text-sm (14px) for visual density.
+     Floor just the focus-time rendering at 16px so the tap can't trigger that zoom, without
+     bumping the resting design size.
+     !important is deliberate: a bare element selector like `select` has lower specificity than
+     Tailwind's `.text-sm` utility class the components apply, so without it this rule silently
+     lost the cascade and did nothing — confirmed dropdowns were still rendering oversized on
+     mobile because the page was still zooming in on focus. */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
 }

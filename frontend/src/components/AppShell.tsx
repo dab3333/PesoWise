@@ -1,7 +1,10 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
+import { Avatar } from '@/components/Avatar'
 import { Logo } from '@/components/Logo'
 import { cn } from '@/components/ui'
+import { ConfirmDialog, Modal } from '@/components/Modal'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 /** Inline SVGs rather than an icon package — eight glyphs is not worth a dependency. */
@@ -15,6 +18,17 @@ const icons = {
   settings:
     'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-2.9 1.2V21a2 2 0 11-4 0v-.1A1.7 1.7 0 007 19.4a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.7 1.7 0 003 15a1.7 1.7 0 00-1.7-1.1H1a2 2 0 110-4h.2A1.7 1.7 0 003 9a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1A1.7 1.7 0 009 3V3a2 2 0 114 0v.2A1.7 1.7 0 0017 4.6a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1A1.7 1.7 0 0021 9v0a2 2 0 110 4h-.2a1.7 1.7 0 00-1.4 1z',
 } as const
+
+/** Three filled dots — distinct enough from the stroked glyphs above not to read as another page. */
+function MoreIcon() {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="size-5 shrink-0">
+      <circle cx="5" cy="12" r="1.75" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.75" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.75" fill="currentColor" />
+    </svg>
+  )
+}
 
 interface NavItem {
   to: string
@@ -31,6 +45,12 @@ const navItems: NavItem[] = [
   { to: '/recurring', label: 'Recurring', icon: 'recurring' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
 ]
+
+// The sidebar has room for all seven; the phone-width bottom bar does not. Split into the three
+// used most often plus a "More" sheet for the rest, rather than cramming seven tabs into ~390px.
+const MOBILE_PRIMARY_COUNT = 3
+const mobilePrimaryItems = navItems.slice(0, MOBILE_PRIMARY_COUNT)
+const mobileMoreItems = navItems.slice(MOBILE_PRIMARY_COUNT)
 
 function Icon({ name }: { name: keyof typeof icons }) {
   return (
@@ -55,6 +75,18 @@ function Icon({ name }: { name: keyof typeof icons }) {
  */
 export function AppShell() {
   const { user, logout } = useAuth()
+  const location = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
+  const isMoreActive = mobileMoreItems.some((item) => item.to === location.pathname)
+
+  // React Router does not reset scroll on navigation by itself — without this, following a link
+  // from partway down a tall page (e.g. "Manage budgets" near the bottom of the dashboard) lands
+  // on the next page still scrolled to that same position, looking like it opened at its bottom.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [location.pathname])
 
   return (
     <div className="min-h-dvh bg-canvas">
@@ -87,9 +119,12 @@ export function AppShell() {
 
         <div className="border-t border-line p-3">
           <div className="flex items-center justify-between gap-2 px-2 py-1">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-ink">{user?.displayName}</p>
-              <p className="truncate text-xs text-muted">{user?.email}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <Avatar name={user?.displayName} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{user?.displayName}</p>
+                <p className="truncate text-xs text-muted">{user?.email}</p>
+              </div>
             </div>
             <ThemeToggle />
           </div>
@@ -110,39 +145,121 @@ export function AppShell() {
           <ThemeToggle />
           <button
             type="button"
-            onClick={logout}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-surface-muted"
+            onClick={() => setProfileOpen(true)}
+            aria-label="Account"
+            className="rounded-full transition-opacity hover:opacity-80"
           >
-            Sign out
+            <Avatar name={user?.displayName} />
           </button>
         </div>
       </header>
 
-      {/* pb-24 clears the fixed bottom bar on mobile. */}
+      {/* pb-24 clears the fixed bottom bar on mobile. Keyed by path so the animation re-runs on
+          every navigation, not just the first mount. */}
       <main className="px-4 pt-6 pb-24 md:ml-60 md:px-8 md:pb-10">
-        <div className="mx-auto max-w-6xl">
+        <div key={location.pathname} className="mx-auto max-w-6xl page-transition">
           <Outlet />
         </div>
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 flex justify-around border-t border-line bg-surface md:hidden">
-        {navItems.map((item) => (
+        {mobilePrimaryItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
             className={({ isActive }) =>
               cn(
-                'flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium',
+                'flex min-w-0 flex-1 flex-col items-center gap-1 overflow-hidden py-2 text-[11px] font-medium',
                 isActive ? 'text-accent' : 'text-muted',
               )
             }
           >
             <Icon name={item.icon} />
-            {item.label}
+            {/* The two longest labels ("Dashboard", "Transactions") would otherwise overflow
+                their column and bleed into the next tab's label at 7-across on a phone width. */}
+            <span className="w-full truncate text-center">{item.label}</span>
           </NavLink>
         ))}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={cn(
+            'flex min-w-0 flex-1 flex-col items-center gap-1 overflow-hidden py-2 text-[11px] font-medium',
+            isMoreActive ? 'text-accent' : 'text-muted',
+          )}
+        >
+          <MoreIcon />
+          <span className="w-full truncate text-center">More</span>
+        </button>
       </nav>
+
+      {moreOpen && (
+        <Modal open onClose={() => setMoreOpen(false)} title="More">
+          <nav className="flex flex-col gap-1">
+            {mobileMoreItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setMoreOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-accent-soft text-accent'
+                      : 'text-body hover:bg-surface-muted',
+                  )
+                }
+              >
+                <Icon name={item.icon} />
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </Modal>
+      )}
+
+      {profileOpen && (
+        <>
+          {/* An invisible full-screen button, not a Modal backdrop — this is a dropdown menu
+              (dismiss on outside tap), unlike the app's form dialogs (which stay open until an
+              explicit close, per the earlier modal-dismissal fix). */}
+          <button
+            type="button"
+            aria-label="Close account menu"
+            onClick={() => setProfileOpen(false)}
+            className="fixed inset-0 z-20 cursor-default md:hidden"
+          />
+          <div className="fixed top-16 right-4 z-20 w-64 rounded-xl border border-line bg-surface p-4 md:hidden">
+            <div className="flex items-center gap-3">
+              <Avatar name={user?.displayName} size="size-10" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{user?.displayName}</p>
+                <p className="truncate text-xs text-muted">{user?.email}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-muted transition-colors hover:bg-surface-muted hover:text-body"
+              onClick={() => {
+                setProfileOpen(false)
+                setConfirmingSignOut(true)
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirmingSignOut}
+        onClose={() => setConfirmingSignOut(false)}
+        onConfirm={logout}
+        confirmLabel="Sign out"
+        title="Sign out?"
+        message="You'll need to sign in again to get back to your budget."
+      />
     </div>
   )
 }

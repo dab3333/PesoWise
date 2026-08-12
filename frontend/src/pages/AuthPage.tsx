@@ -72,7 +72,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
           <Logo />
         </div>
 
-        <div className="rounded-xl border border-line bg-surface p-6">
+        <div key={mode} className="page-transition rounded-xl border border-line bg-surface p-6">
           <h1 className="text-xl font-semibold">{title}</h1>
           <p className="mt-1 mb-6 text-sm text-muted">{subtitle}</p>
 
