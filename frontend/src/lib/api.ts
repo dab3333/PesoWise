@@ -135,3 +135,29 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
+
+/**
+ * Downloads a file response (a CSV export, say) rather than parsing it as JSON.
+ *
+ * `request()` above always calls `JSON.parse` on the response body, which would throw on a
+ * `text/csv` response — this bypasses that path entirely and hands the browser a native download
+ * instead, the same way a plain `<a href>` would if the endpoint didn't require a bearer token.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = getToken()
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+
+  if (!response.ok) {
+    throw new ApiError(response.status, ...(await describeFailure(response)))
+  }
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}

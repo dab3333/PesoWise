@@ -1,5 +1,7 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { forwardRef, useId } from 'react'
+import type { Money } from '@/api/types'
+import { formatPeso, toNumber } from '@/lib/format'
 
 /** Tiny class joiner — the app has no need for a clsx dependency. */
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -130,6 +132,56 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   )
 })
 
+/* --------------------------------------------------------------- TextArea */
+
+interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string
+  error?: string
+  hint?: string
+}
+
+/** Mirrors {@link Field} exactly — the feedback form is the first thing in the app that needs
+ * more than one line of free text, so this is the first `<textarea>` in the codebase. */
+export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea(
+  { label, error, hint, className, id, rows = 4, ...rest },
+  ref,
+) {
+  const generatedId = useId()
+  const inputId = id ?? generatedId
+  const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-sm font-medium text-ink">
+        {label}
+      </label>
+      <textarea
+        ref={ref}
+        id={inputId}
+        rows={rows}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={cn(
+          'resize-y rounded-lg border bg-surface px-3 py-2 text-sm text-ink placeholder:text-subtle',
+          'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+          error ? 'border-expense' : 'border-line',
+          className,
+        )}
+        {...rest}
+      />
+      {error ? (
+        <span id={`${inputId}-error`} className="text-xs text-expense">
+          {error}
+        </span>
+      ) : hint ? (
+        <span id={`${inputId}-hint`} className="text-xs text-muted">
+          {hint}
+        </span>
+      ) : null}
+    </div>
+  )
+})
+
 /* ------------------------------------------------------------------ Alert */
 
 export function Alert({ children }: { children: ReactNode }) {
@@ -151,6 +203,95 @@ export function EmptyState({ message, action }: { message: string; action?: Reac
     <div className="flex flex-col items-center gap-3 py-10 text-center">
       <p className="text-sm text-muted">{message}</p>
       {action}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------- Table pieces */
+/* Lifted out of TransactionsPage and DashboardPage, which each defined their own copy before
+   the admin tables needed a second (then third) one. */
+
+export function Th({ children, className = '' }: { children?: ReactNode; className?: string }) {
+  return (
+    <th className={cn('px-4 py-2.5 text-xs font-medium text-muted', className)}>{children}</th>
+  )
+}
+
+export function IconButton({
+  label,
+  onClick,
+  children,
+  tone = 'default',
+}: {
+  label: string
+  onClick: () => void
+  children: ReactNode
+  /** 'danger' is for a destructive action's trigger icon — never the confirm step itself. */
+  tone?: 'default' | 'danger'
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-muted',
+        tone === 'danger' ? 'hover:text-expense' : 'hover:text-body',
+      )}
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="size-4"
+      >
+        {children}
+      </svg>
+    </button>
+  )
+}
+
+/* -------------------------------------------------------------- StatTile */
+
+export function StatTile({
+  label,
+  value,
+  tone = 'neutral',
+}: {
+  label: string
+  value: Money
+  tone?: 'income' | 'expense' | 'net' | 'neutral'
+}) {
+  const amount = toNumber(value)
+  const color =
+    tone === 'income'
+      ? 'text-income'
+      : tone === 'expense'
+        ? 'text-expense'
+        : tone === 'net' && amount < 0
+          ? 'text-expense'
+          : 'text-ink'
+
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      {/* Proportional figures, not tabular: equal-width digits read loose at display sizes. */}
+      <p className={`mt-2 text-2xl font-semibold sm:text-3xl ${color}`}>{formatPeso(amount)}</p>
+    </div>
+  )
+}
+
+/** Like {@link StatTile} but for a plain count rather than a peso amount — no currency symbol. */
+export function CountTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      <p className="tnum mt-2 text-2xl font-semibold text-ink sm:text-3xl">{value}</p>
     </div>
   )
 }

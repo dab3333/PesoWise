@@ -1,7 +1,12 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { useAuth } from '@/auth/AuthContext'
+import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { AppShell } from '@/components/AppShell'
+import { AboutPage } from '@/pages/AboutPage'
+import { AdminFeedbackPage } from '@/pages/admin/AdminFeedbackPage'
+import { AdminOverviewPage } from '@/pages/admin/AdminOverviewPage'
+import { AdminReportsPage } from '@/pages/admin/AdminReportsPage'
+import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
 import { AuthPage } from '@/pages/AuthPage'
 import { BudgetsPage } from '@/pages/BudgetsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -22,6 +27,18 @@ function RequireAuth({ children }: { children: ReactNode }) {
   if (initialising) return <FullPageLoader />
   // Remember where they were headed so login can send them back there.
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  return <>{children}</>
+}
+
+/**
+ * Guards the /admin/** routes. Cosmetic, not the security boundary — the gateway already
+ * refuses a non-admin token on every /api/admin/** call with 403, so the worst this guard
+ * missing could do is render a page whose data requests all fail. It exists so that outcome
+ * never has to happen: a non-admin is redirected before the page even mounts.
+ */
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (!isAdmin(user)) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -100,7 +117,40 @@ export default function App() {
         <Route path="goals" element={<GoalsPage />} />
         <Route path="recurring" element={<RecurringPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="about" element={<AboutPage />} />
 
+        <Route
+          path="admin"
+          element={
+            <RequireAdmin>
+              <AdminOverviewPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="admin/users"
+          element={
+            <RequireAdmin>
+              <AdminUsersPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="admin/feedback"
+          element={
+            <RequireAdmin>
+              <AdminFeedbackPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="admin/reports"
+          element={
+            <RequireAdmin>
+              <AdminReportsPage />
+            </RequireAdmin>
+          }
+        />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

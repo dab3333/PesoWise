@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Modal, ConfirmDialog } from '@/components/Modal'
 import { DateField, Select, MoneyInput } from '@/components/form'
-import { Alert, Button, Card, EmptyState, Field } from '@/components/ui'
+import { Alert, Button, Card, EmptyState, Field, IconButton, Th } from '@/components/ui'
 import {
   useAccounts,
   useCategories,
@@ -401,45 +401,6 @@ function TransactionDialog({
         </div>
       </form>
     </Modal>
-  )
-}
-
-function Th({ children, className = '' }: { children?: React.ReactNode; className?: string }) {
-  return (
-    <th className={`px-4 py-2.5 text-xs font-medium text-muted ${className}`}>{children}</th>
-  )
-}
-
-function IconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      className="grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-muted hover:text-body"
-    >
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="size-4"
-      >
-        {children}
-      </svg>
-    </button>
   )
 }
 

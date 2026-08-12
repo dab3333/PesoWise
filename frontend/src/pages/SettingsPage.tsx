@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { MoneyInput, Select } from '@/components/form'
@@ -47,6 +48,16 @@ export function SettingsPage() {
         <AccountsCard />
         <CategoriesCard />
         <AppearanceCard />
+
+        <Link
+          to="/about"
+          className="flex items-center justify-between rounded-xl border border-line bg-surface p-5 text-sm font-medium text-ink transition-colors hover:bg-surface-muted"
+        >
+          About &amp; feedback
+          <span aria-hidden className="text-muted">
+            ›
+          </span>
+        </Link>
       </div>
     </>
   )

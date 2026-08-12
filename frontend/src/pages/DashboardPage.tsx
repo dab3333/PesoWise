@@ -6,7 +6,7 @@ import { useRecurringBills } from '@/api/useRecurring'
 import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Meter } from '@/components/Meter'
-import { Card, CardTitle } from '@/components/ui'
+import { Card, CardTitle, StatTile } from '@/components/ui'
 import { LazyDailyTrendChart, LazySpendByCategoryChart } from '@/components/LazyCharts'
 import {
   useAccounts,
@@ -16,7 +16,6 @@ import {
   useSummary,
 } from '@/api/useLedger'
 import { BUCKET_LABELS } from '@/api/types'
-import type { Money } from '@/api/types'
 import { formatPeso, toMonthKey, toNumber } from '@/lib/format'
 
 export function DashboardPage() {
@@ -175,28 +174,6 @@ export function DashboardPage() {
         </Card>
       </div>
     </>
-  )
-}
-
-function StatTile({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: Money
-  tone: 'income' | 'expense' | 'net'
-}) {
-  const amount = toNumber(value)
-  const color =
-    tone === 'income' ? 'text-income' : tone === 'expense' ? 'text-expense' : amount < 0 ? 'text-expense' : 'text-ink'
-
-  return (
-    <div className="rounded-xl border border-line bg-surface p-5">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
-      {/* Proportional figures, not tabular: equal-width digits read loose at display sizes. */}
-      <p className={`mt-2 text-2xl font-semibold sm:text-3xl ${color}`}>{formatPeso(amount)}</p>
-    </div>
   )
 }
 

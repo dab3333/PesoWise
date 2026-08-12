@@ -44,6 +44,27 @@ const dateFormatter = new Intl.DateTimeFormat('en-PH', {
 
 const monthFormatter = new Intl.DateTimeFormat('en-PH', { month: 'long', year: 'numeric' })
 
+const timestampFormatter = new Intl.DateTimeFormat('en-PH', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+/**
+ * @param isoInstant a full timestamp such as `2026-08-11T07:55:35.413989Z`
+ *
+ * Distinct from {@link formatDate}: that one hand-parses a bare `YYYY-MM-DD` as local time
+ * because a plain date has no timezone to get right. An instant already carries one — `new
+ * Date(...)` handles it correctly — and the admin pages are the first place in the app that
+ * render a timestamp rather than a date, since every user-facing date until now (a transaction,
+ * a due date) was always a plain date already.
+ */
+export function formatTimestamp(isoInstant: string): string {
+  return timestampFormatter.format(new Date(isoInstant))
+}
+
 /**
  * @param isoDate a plain date such as 2026-08-11
  *
