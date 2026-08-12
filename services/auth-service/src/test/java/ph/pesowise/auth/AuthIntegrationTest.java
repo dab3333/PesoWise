@@ -59,7 +59,8 @@ class AuthIntegrationTest {
 
     private static String registerBody(String email) {
         return """
-                {"email":"%s","password":"sikreto123","displayName":"Test User"}
+                {"email":"%s","password":"sikreto123","firstName":"Test","lastName":"User",
+                "age":30,"gender":"UNSPECIFIED","occupation":"EMPLOYED_PRIVATE"}
                 """.formatted(email);
     }
 
