@@ -35,7 +35,7 @@ with root causes.
 | 1 | Roles, email verification, password reset | ✅ Done |
 | 2 | Debt interest accrual | ⬜ Deferred — skipped for now |
 | 3 | admin-service (5th service) | ✅ Done |
-| 4 | Admin UI, About page, feedback | ⬜ Not started |
+| 4 | Admin UI, About page, feedback | ✅ Done |
 | 5 | Landing and auth page | ⬜ Not started |
 | 6 | Deployment readiness | ⬜ Not started |
 
@@ -496,21 +496,53 @@ admin-gated prefix as intended.
 mutation, and the fan-out degradation logic under all four combinations of dependency health),
 plus the existing 164 unaffected. **179 total, all green.**
 
-## Phase 4. Admin UI, About page, feedback ⬜
+## Phase 4. Admin UI, About page, feedback ✅
 
 Prerequisites: a **`TextArea`** in `ui.tsx` (there is no `<textarea>` anywhere in the codebase),
 and extracting `Th`/`IconButton`/`StatTile` out of the pages they are currently trapped in.
 
 `navItems` is a module-level `const` evaluated once, so role-aware navigation means computing it
 inside the component. Admin links go in a **separate sidebar group under a divider** — the mobile
-bar is already full at 3 tabs plus More.
+bar is already full at 3 tabs plus More. That group is enough to overflow the sidebar's own height
+on a shorter viewport, so the nav list scrolls internally (`min-h-0 overflow-y-auto` on the `<nav>`,
+not the `<aside>`) while the logo header and the account/sign-out footer stay pinned.
 
 `/about` carries the app description, developer credit, contact, version and the feedback form,
 linked from a new row in Settings. The version comes from `package.json` via a Vite `define`, so
 there is exactly one source of truth.
 
+The overview page's `signupsLast30Days` and `dailyLast30Days` series (added on the backend in
+Phase 3 but never rendered) got two Recharts panels — a new `SignupsChart` and a reuse of the
+Dashboard's existing `DailyTrendChart`, since `DailyPoint` and `DailyTotal` are structurally
+identical. Both are lazy-loaded the same way the Dashboard's charts are, so the admin panel does
+not tax the bundle any account without the ADMIN role ever pays for.
+
 [design-system.md](design-system.md) applies unchanged: no gradients, jade as the only accent.
 The admin panel must not become a second visual language.
+
+### Three things found only by using the deployed app, not by reading the code
+
+1. **A same-origin `localStorage` collision, unrelated to admin but surfaced while testing it.**
+   Two accounts signed in in separate tabs of the same browser stomped on each other's session —
+   not a backend restriction (login is fully stateless; nothing tracks one-token-per-user), but
+   both tabs sharing one `pesowise.token` key. Fixed with a `storage` event listener in
+   `AuthContext` — the one DOM event that fires in the *other* tab when the key changes — which
+   re-verifies against `/me` and adopts the new session, or drops to signed-out if the token was
+   cleared elsewhere.
+2. **Tablet widths were never a real test target and it showed.** The Users table needs a
+   `min-w-[40rem]` (640px) to lay out; once the 15rem sidebar and page padding are subtracted from
+   a tablet's actual width, that no longer fits, and the four-tile stat grids (`sm:grid-cols-4`,
+   one column more than every other stat grid in the app) hit the same problem — both were
+   designed against phone and desktop widths with nothing in between assumed. Fixed by holding the
+   card-list layout through `lg` instead of switching at `md`, and delaying the 4-column stat
+   grids to `lg` as well, so a tablet gets the same breathing room a phone already had rather than
+   a squeezed, overflowing desktop layout.
+3. **The mobile transaction row's note was truncated into an unreachable ellipsis.** The date,
+   account and note were one `truncate`d line, and the row itself is not tappable — only the edit
+   icon opens anything — so a cut-off note with no way to see the rest was a dead end. Moved the
+   note to its own wrapping line instead of trimming it, which also meant switching the row from
+   `items-center` to `items-start` so the category dot, amount and action icons stay aligned to
+   the top line instead of drifting toward the middle of a now-taller card.
 
 ## Phase 5. Landing and auth page ⬜
 

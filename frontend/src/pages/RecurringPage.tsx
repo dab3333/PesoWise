@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
@@ -22,6 +23,7 @@ import { ApiError } from '@/lib/api'
 import { formatDate, formatPeso, toDateKey } from '@/lib/format'
 
 export function RecurringPage() {
+  const { user } = useAuth()
   const bills = useRecurringBills()
   const deleteBill = useDeleteBill()
   const runNow = useRunNow()
@@ -50,26 +52,32 @@ export function RecurringPage() {
             Committed per month:{' '}
             <span className="tnum font-medium text-ink">{formatPeso(data?.monthlyTotal ?? 0)}</span>
           </p>
-          {/* Exposed because waiting until after midnight to see it work is a poor experience. */}
-          <Button
-            variant="secondary"
-            loading={runNow.isPending}
-            onClick={() =>
-              runNow.mutate(undefined, {
-                onSuccess: (summary) =>
-                  setNotice(
-                    summary.posted === 0 && summary.flagged === 0
-                      ? 'Nothing was due.'
-                      : `${summary.posted} recorded, ${summary.flagged} waiting for confirmation${
-                          summary.skipped > 0 ? `, ${summary.skipped} already done` : ''
-                        }.${summary.notes.length > 0 ? ` ${summary.notes.join(' ')}` : ''}`,
-                  ),
-                onError: () => setNotice('Could not run the check just now.'),
-              })
-            }
-          >
-            Run the check now
-          </Button>
+          {/* Exposed because waiting until after midnight to see it work is a poor experience —
+              but the endpoint runs the pass for every user in the system, not just the caller,
+              so it's admin-only on the backend. A regular user would just get a 403 here; rather
+              than show a button that always fails for them, they rely on the nightly scheduler
+              like everyone else. */}
+          {isAdmin(user) && (
+            <Button
+              variant="secondary"
+              loading={runNow.isPending}
+              onClick={() =>
+                runNow.mutate(undefined, {
+                  onSuccess: (summary) =>
+                    setNotice(
+                      summary.posted === 0 && summary.flagged === 0
+                        ? 'Nothing was due.'
+                        : `${summary.posted} recorded, ${summary.flagged} waiting for confirmation${
+                            summary.skipped > 0 ? `, ${summary.skipped} already done` : ''
+                          }.${summary.notes.length > 0 ? ` ${summary.notes.join(' ')}` : ''}`,
+                    ),
+                  onError: () => setNotice('Could not run the check just now.'),
+                })
+              }
+            >
+              Run the check now
+            </Button>
+          )}
         </div>
       )}
 

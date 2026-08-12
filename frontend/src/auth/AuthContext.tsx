@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { api, clearToken, getToken, setToken, setUnauthorizedHandler } from '@/lib/api'
+import { TOKEN_KEY, api, clearToken, getToken, setToken, setUnauthorizedHandler } from '@/lib/api'
 
 export type Role = 'USER' | 'ADMIN'
 
@@ -92,6 +92,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  // localStorage is shared by every tab on this origin, so signing in as someone else in another
+  // tab overwrites the one token this tab was using too. Without this, the first tab would keep
+  // rendering as the old user until its next 401 — quietly mixing two people's data in one tab.
+  // The `storage` event only fires in OTHER tabs than the one that made the change, which is
+  // exactly the tab that needs to notice.
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key !== TOKEN_KEY || event.storageArea !== localStorage) return
+
+      if (!event.newValue) {
+        // Signed out elsewhere: drop this tab's session without touching a token that is
+        // already gone.
+        setUser(null)
+        queryClient.clear()
+        return
+      }
+
+      if (event.newValue === event.oldValue) return
+
+      // A different (or re-signed-in) account's token landed in storage — re-verify it and
+      // adopt that identity, discarding whatever was cached under the previous one.
+      queryClient.clear()
+      api
+        .get<User>('/api/auth/me')
+        .then((me) => setUser(me))
+        .catch(() => {
+          clearToken()
+          setUser(null)
+        })
+    }
+
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [queryClient])
 
   const login = useCallback(
     async (email: string, password: string) => {

@@ -7,7 +7,9 @@
  */
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
 
-const TOKEN_KEY = 'pesowise.token'
+// Exported so AuthContext can recognise this key in a cross-tab `storage` event without a
+// second hardcoded copy of it.
+export const TOKEN_KEY = 'pesowise.token'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)

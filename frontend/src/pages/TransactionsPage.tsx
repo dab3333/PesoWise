@@ -118,18 +118,26 @@ export function TransactionsPage() {
                 proper table, so it keeps one. */}
             <ul className="divide-y divide-line md:hidden">
               {rows.map((row) => (
-                <li key={row.id} className="flex items-center gap-3 px-4 py-3">
+                <li key={row.id} className="flex items-start gap-3 px-4 py-3">
+                  {/* Top-aligned with the rest of the row now that a note can push this card to
+                      several lines — nudged down to sit on the category name's line rather than
+                      the row's own top edge. */}
                   <span
                     aria-hidden
-                    className="size-2 shrink-0 rounded-full"
+                    className="mt-1.5 size-2 shrink-0 rounded-full"
                     style={{ background: row.categoryColor }}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{row.categoryName}</p>
                     <p className="truncate text-xs text-muted">
                       {formatDate(row.txnDate)} · {row.accountName}
-                      {row.note && ` · ${row.note}`}
                     </p>
+                    {/* Its own wrapping line, not appended to the line above and truncated —
+                        the row itself isn't tappable to reveal anything, only the edit icon is,
+                        so a "…" here would promise a detail view that doesn't exist. */}
+                    {row.note && (
+                      <p className="mt-0.5 text-xs break-words text-muted">{row.note}</p>
+                    )}
                   </div>
                   {/* Its own column, right-aligned, ahead of a fixed-width trailing slot — kept
                       out of the name's flex box, whose available width (and so the amount's

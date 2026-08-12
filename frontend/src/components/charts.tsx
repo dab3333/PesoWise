@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { formatDate, formatPeso, formatPesoCompact, parseLocalDate, toNumber } from '@/lib/format'
 import type { CategoryTotal, DailyTotal } from '@/api/types'
+import type { SignupDay } from '@/api/useAdmin'
 import { Button } from './ui'
 
 /* Chart colours come from CSS variables, which SVG resolves natively — so the marks follow the
@@ -233,6 +234,58 @@ export function DailyTrendChart({ data }: { data: DailyTotal[] }) {
               isAnimationActive={false}
             />
           </LineChart>
+        </ResponsiveContainer>
+      )}
+      <TableToggle showTable={showTable} onToggle={() => setShowTable((value) => !value)} />
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------- signups
+   One series of plain counts, not pesos — kept separate from DailyTrendChart rather than
+   generalising the two, since sharing a "day + up to two numeric series" component would need
+   props for units and colour that only one caller each would ever set. */
+
+export function SignupsChart({ data }: { data: SignupDay[] }) {
+  const [showTable, setShowTable] = useState(false)
+
+  const hasActivity = data.some((day) => day.count > 0)
+  if (!hasActivity) {
+    return <p className="py-8 text-center text-sm text-muted">No signups in the last 30 days.</p>
+  }
+
+  const rows = data.map((day) => ({ ...day, day: parseLocalDate(day.date).getDate() }))
+
+  return (
+    <div>
+      {showTable ? (
+        <DataTable
+          headers={['Date', 'Signups']}
+          rows={rows.filter((row) => row.count > 0).map((row) => [formatDate(row.date), String(row.count)])}
+        />
+      ) : (
+        <ResponsiveContainer width="100%" height={200} className="chart-enter">
+          <BarChart
+            data={rows}
+            margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+            onTouchStart={forwardTouchAsHover}
+          >
+            <CartesianGrid vertical={false} stroke={GRID} />
+            <XAxis dataKey="day" tick={axisTick} axisLine={false} tickLine={false} minTickGap={16} />
+            <YAxis allowDecimals={false} tick={axisTick} axisLine={false} tickLine={false} width={32} />
+            <Tooltip
+              cursor={{ fill: 'var(--surface-muted)' }}
+              content={({ active, payload }) => {
+                const row = active && payload?.length
+                  ? (payload[0].payload as (typeof rows)[number])
+                  : null
+                return row ? (
+                  <TooltipShell title={formatDate(row.date)} rows={[['Signups', String(row.count)]]} />
+                ) : null
+              }}
+            />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="var(--chart-1)" isAnimationActive={false} />
+          </BarChart>
         </ResponsiveContainer>
       )}
       <TableToggle showTable={showTable} onToggle={() => setShowTable((value) => !value)} />

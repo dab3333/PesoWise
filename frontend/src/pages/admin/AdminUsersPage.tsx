@@ -67,7 +67,11 @@ export function AdminUsersPage() {
           <EmptyState message="No users match that search." />
         ) : (
           <div className={users.isFetching ? 'opacity-50 transition-opacity' : ''}>
-            <ul className="divide-y divide-line md:hidden">
+            {/* The table needs 40rem, and the 15rem sidebar eats into a tablet's width the same
+                way it would a phone's — so the card list holds through lg, not just md, and only
+                a true desktop-width viewport gets the table instead of a cramped, overflowing
+                one. */}
+            <ul className="divide-y divide-line lg:hidden">
               {rows.map((row) => (
                 <li key={row.id} className="flex flex-col gap-2 px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
@@ -82,7 +86,7 @@ export function AdminUsersPage() {
               ))}
             </ul>
 
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[40rem] text-sm">
                 <thead className="bg-surface-muted text-left">
                   <tr>
@@ -90,7 +94,7 @@ export function AdminUsersPage() {
                     <Th>Email</Th>
                     <Th>Status</Th>
                     <Th>Joined</Th>
-                    <Th className="w-56" />
+                    <Th className="w-64" />
                   </tr>
                 </thead>
                 <tbody>
@@ -179,10 +183,12 @@ function RowActions({
   onAction: (action: PendingAction) => void
 }) {
   return (
-    <span className="flex flex-wrap gap-1">
+    <span className="flex items-center justify-end gap-1 whitespace-nowrap">
       <Button
         variant="ghost"
-        className="px-2 py-1 text-xs"
+        // A transparent border matching the other button's real one, so both sit at the same
+        // box height instead of the borderless ghost button reading a couple pixels off.
+        className="border border-transparent px-2 py-1 text-xs"
         onClick={() =>
           onAction({ kind: row.role === 'ADMIN' ? 'demote' : 'promote', user: row })
         }

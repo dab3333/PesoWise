@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardTitle, CountTile, StatTile } from '@/components/ui'
+import { LazyDailyTrendChart, LazySignupsChart } from '@/components/LazyCharts'
 import { useOverview } from '@/api/useAdmin'
 import type { Section } from '@/api/useAdmin'
 
@@ -16,29 +17,45 @@ export function AdminOverviewPage() {
       <div className="grid gap-6">
         <SectionCard title="Users" section={data?.users} loading={overview.isLoading}>
           {(stats) => (
-            <div className="grid gap-4 sm:grid-cols-4">
-              <CountTile label="Total" value={stats.totalUsers} />
-              <CountTile label="Verified" value={stats.verifiedUsers} />
-              <CountTile label="Disabled" value={stats.disabledUsers} />
-              <CountTile label="Admins" value={stats.adminUsers} />
-            </div>
+            <>
+              {/* Four tiles is one more than every other stat grid in the app (which top out at
+                  sm:grid-cols-3) — fine on real desktop widths, but the 15rem sidebar makes a
+                  tablet's usable width closer to a phone's, so the jump to 4 columns waits for
+                  lg rather than sm. */}
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <CountTile label="Total" value={stats.totalUsers} />
+                <CountTile label="Verified" value={stats.verifiedUsers} />
+                <CountTile label="Disabled" value={stats.disabledUsers} />
+                <CountTile label="Admins" value={stats.adminUsers} />
+              </div>
+              <div className="mt-6">
+                <p className="mb-3 text-sm font-medium text-ink">Signups, last 30 days</p>
+                <LazySignupsChart data={stats.signupsLast30Days} />
+              </div>
+            </>
           )}
         </SectionCard>
 
         <SectionCard title="Ledger activity" section={data?.ledger} loading={overview.isLoading}>
           {(stats) => (
-            <div className="grid gap-4 sm:grid-cols-4">
-              <CountTile label="Transactions" value={stats.transactionCount} />
-              <CountTile label="Active users" value={stats.activeUsers} />
-              <StatTile label="Total income" value={stats.totalIncome} tone="income" />
-              <StatTile label="Total expense" value={stats.totalExpense} tone="expense" />
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <CountTile label="Transactions" value={stats.transactionCount} />
+                <CountTile label="Active users" value={stats.activeUsers} />
+                <StatTile label="Total income" value={stats.totalIncome} tone="income" />
+                <StatTile label="Total expense" value={stats.totalExpense} tone="expense" />
+              </div>
+              <div className="mt-6">
+                <p className="mb-3 text-sm font-medium text-ink">Income vs. expense, last 30 days</p>
+                <LazyDailyTrendChart data={stats.dailyLast30Days} />
+              </div>
+            </>
           )}
         </SectionCard>
 
         <SectionCard title="Planning" section={data?.planning} loading={overview.isLoading}>
           {(stats) => (
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <CountTile label="Budget lines this month" value={stats.budgetLinesThisMonth} />
               <CountTile label="Active debts" value={stats.activeDebts} />
               <CountTile label="Active goals" value={stats.activeGoals} />
