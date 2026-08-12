@@ -24,4 +24,7 @@ public interface RecurringBillRepository extends JpaRepository<RecurringBill, UU
      * Deliberately not user-scoped: the scheduler runs for everyone.
      */
     List<RecurringBill> findByActiveTrueAndNextRunDateLessThanEqual(LocalDate date);
+
+    /** Every user's active bills. Backs the admin overview. */
+    long countByActiveTrue();
 }

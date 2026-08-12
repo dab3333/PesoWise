@@ -33,8 +33,8 @@ with root causes.
 | # | Phase | Status |
 | --- | --- | --- |
 | 1 | Roles, email verification, password reset | ✅ Done |
-| 2 | Debt interest accrual | ⬜ Not started |
-| 3 | admin-service (5th service) | ⬜ Not started |
+| 2 | Debt interest accrual | ⬜ Deferred — skipped for now |
+| 3 | admin-service (5th service) | ✅ Done |
 | 4 | Admin UI, About page, feedback | ⬜ Not started |
 | 5 | Landing and auth page | ⬜ Not started |
 | 6 | Deployment readiness | ⬜ Not started |
@@ -441,25 +441,60 @@ ledger-service owns money which has actually moved.
 `DebtServiceTest` currently has **zero** interest tests; the one debt created with a rate never
 asserts on it.
 
-## Phase 3. admin-service ⬜
+## Phase 3. admin-service ✅
 
 A fifth Maven module at `services/admin-service` (:8084) with its own database, owning `feedback`
-and `admin_audit`.
+and `admin_audit`. Phase 2 (debt interest) was deliberately skipped to reach this phase directly —
+nothing here depends on it.
 
-**Still no shared `common` module.** What would be shared is ~60 lines of header plumbing and a
-few DTOs; extracting it would couple five build lifecycles to save very little, and the gateway
-already centralises the actual security decision.
+**Still no shared `common` module**, confirmed rather than assumed: the actual duplication turned
+out to be one header constant class and a handful of DTOs per service, which is cheaper to keep
+as copies than to couple five build lifecycles over.
 
-Nothing today can query across users — every repository method has `WHERE user_id = :userId`
-baked in, with no exceptions — so the cross-user aggregates are genuinely new queries, and they
-live in the service that owns the data. They are exposed under **`/internal/admin/**`, not
-`/api/**`**: the gateway has no route for `/internal/`, so they are unreachable from the internet
-and callable only over the Compose network — the same trust model planning-service already uses
-to reach ledger-service.
+Nothing could query across users before this phase — every repository method had
+`WHERE user_id = :userId` baked in, with no exceptions — so the cross-user aggregates
+(`InternalAdminService` in auth-service, and the equivalent stats controllers in ledger-service
+and planning-service) are genuinely new queries, living in the service that owns the data. They
+are exposed under **`/internal/admin/**`, not `/api/**`**: the gateway has no route for
+`/internal/`, so they are unreachable from the internet and callable only over the Compose
+network — the same trust model planning-service already uses to reach ledger-service.
 
-`POST /api/feedback` is the one non-admin endpoint and needs a gateway route *outside* the
-admin-gated prefix. Reports are streamed CSV — no PDF library for a format nobody has asked for.
-The `/api/admin/overview` fan-out must degrade per panel when a service is down, not 500.
+`POST /api/feedback` is the one non-admin endpoint and got its own gateway route *outside* the
+admin-gated prefix. Reports are streamed CSV — one representative export (`users.csv`) rather than
+a generic report framework, since nothing has asked for a second one yet. The
+`/api/admin/overview` fan-out degrades per panel when a service is down rather than failing the
+whole request.
+
+### Two failures worth recording
+
+Both were caught by running the stack, not by reading the code:
+
+1. **A null search parameter crashed the user list with `function lower(bytea) does not exist`.**
+   `WHERE :q IS NULL OR LOWER(u.email) LIKE ...` — when `:q` is null and feeds straight into
+   `LOWER(...)`, Postgres cannot infer the placeholder's type from context and defaults to
+   `bytea`. Fixed with an explicit `CAST(:q AS string)`, which pins the type regardless of the
+   value.
+2. **Feign could not send `PATCH` at all.** Its default client wraps
+   `java.net.HttpURLConnection`, which refuses the method outright with "Invalid HTTP method:
+   PATCH" — a JDK limitation, not a Feign bug. admin-service is the first service in this codebase
+   to send `PATCH` between services (updating a user's role), so nothing had hit this before.
+   Fixed by switching Feign to OkHttp (`feign-okhttp` + `spring.cloud.openfeign.okhttp.enabled`).
+
+*Verified against the running stack:* `/api/admin/overview` returns real cross-service numbers —
+user counts, ledger transaction volume, planning totals, feedback counts — composed from three
+live Feign calls. Stopping ledger-service mid-request confirmed the fan-out degrades correctly:
+the response stayed `200`, the ledger panel reported `available: false` with a message, and the
+other three panels were unaffected. A `PATCH` to disable a user, then re-enable it, both wrote a
+correctly-labelled row to `admin_audit`. `/internal/admin/users` is unreachable through the
+gateway (404, no route). A non-admin token is refused on `/api/admin/**` with 403, and a spoofed
+`X-User-Role: ADMIN` header on that same token is also refused — the header-stripping guarantee
+from Phase 1 holds for a route that did not exist when that guarantee was first tested.
+`POST /api/feedback` succeeds for an ordinary signed-in user, confirming it sits outside the
+admin-gated prefix as intended.
+
+*Tests:* admin-service 15 (new — feedback status transitions, the audit trail on every user
+mutation, and the fan-out degradation logic under all four combinations of dependency health),
+plus the existing 164 unaffected. **179 total, all green.**
 
 ## Phase 4. Admin UI, About page, feedback ⬜
 

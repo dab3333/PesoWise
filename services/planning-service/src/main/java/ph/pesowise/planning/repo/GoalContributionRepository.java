@@ -38,4 +38,8 @@ public interface GoalContributionRepository extends JpaRepository<GoalContributi
 
         int getContributionCount();
     }
+
+    /** Every user's saved total, in one number. Backs the admin overview, not user-scoped. */
+    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM GoalContribution c")
+    java.math.BigDecimal sumAllContributions();
 }

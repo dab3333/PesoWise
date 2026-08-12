@@ -21,4 +21,7 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
 
     /** Powers "copy last month's budget" and tells the UI whether a prior month exists. */
     boolean existsByUserIdAndPeriodMonth(UUID userId, LocalDate periodMonth);
+
+    /** Every user's budget lines for the given month. Backs the admin overview. */
+    long countByPeriodMonth(LocalDate periodMonth);
 }

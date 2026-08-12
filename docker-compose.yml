@@ -74,6 +74,24 @@ services:
       retries: 10
       start_period: 10s
 
+  postgres-admin:
+    <<: *postgres-common
+    container_name: pesowise-postgres-admin
+    environment:
+      POSTGRES_DB: ${ADMIN_DB_NAME}
+      POSTGRES_USER: ${ADMIN_DB_USER}
+      POSTGRES_PASSWORD: ${ADMIN_DB_PASSWORD}
+    ports:
+      - "${ADMIN_DB_PORT}:5432"
+    volumes:
+      - postgres-admin-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_DB_USER} -d ${ADMIN_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   # ----------------------------------------------------------------- services
   auth-service:
     build: ./services/auth-service
@@ -162,6 +180,35 @@ services:
       retries: 10
       start_period: 40s
 
+  admin-service:
+    build: ./services/admin-service
+    container_name: pesowise-admin-service
+    restart: unless-stopped
+    depends_on:
+      postgres-admin:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8084
+      DB_HOST: postgres-admin
+      DB_PORT: 5432
+      DB_NAME: ${ADMIN_DB_NAME}
+      DB_USER: ${ADMIN_DB_USER}
+      DB_PASSWORD: ${ADMIN_DB_PASSWORD}
+      # Feign calls all three directly over the Compose network, not back through the gateway —
+      # the same choice planning-service already makes for ledger-service. These are the only
+      # callers that can ever reach the other services' /internal/admin/** endpoints, since the
+      # gateway has no route for /internal/**.
+      AUTH_SERVICE_URL: http://auth-service:8081
+      LEDGER_SERVICE_URL: http://ledger-service:8082
+      PLANNING_SERVICE_URL: http://planning-service:8083
+    networks: [pesowise]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
   gateway:
     build: ./services/gateway
     container_name: pesowise-gateway
@@ -175,12 +222,15 @@ services:
         condition: service_started
       planning-service:
         condition: service_started
+      admin-service:
+        condition: service_started
     environment:
       SERVER_PORT: 8080
       JWT_SECRET: ${JWT_SECRET}
       AUTH_SERVICE_URL: http://auth-service:8081
       LEDGER_SERVICE_URL: http://ledger-service:8082
       PLANNING_SERVICE_URL: http://planning-service:8083
+      ADMIN_SERVICE_URL: http://admin-service:8084
       CORS_ALLOWED_ORIGIN: http://localhost:${FRONTEND_PORT}
     ports:
       - "${GATEWAY_PORT}:8080"
@@ -218,3 +268,4 @@ volumes:
   postgres-auth-data:
   postgres-ledger-data:
   postgres-planning-data:
+  postgres-admin-data:

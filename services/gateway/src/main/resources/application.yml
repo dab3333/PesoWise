@@ -23,6 +23,15 @@ spring:
           predicates:
             - Path=/api/budgets/**,/api/goals/**,/api/debts/**,/api/recurring/**
 
+        # /api/admin/** is gated by the admin-paths rule below; /api/feedback/** is not — any
+        # signed-in user can submit feedback. Both live in the same service, so one route covers
+        # them. Note there is deliberately no route for /internal/**: that prefix is reachable
+        # only over the Compose network, by admin-service's own Feign clients.
+        - id: admin-service
+          uri: ${ADMIN_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/admin/**,/api/feedback/**
+
       globalcors:
         cors-configurations:
           '[/**]':

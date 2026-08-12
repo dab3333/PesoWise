@@ -10,6 +10,7 @@ import ph.pesowise.ledger.repo.Projections.BucketTotal;
 import ph.pesowise.ledger.repo.Projections.CategoryTotal;
 import ph.pesowise.ledger.repo.Projections.DailyTotal;
 import ph.pesowise.ledger.repo.Projections.PeriodTotals;
+import ph.pesowise.ledger.repo.Projections.SystemTotals;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -113,4 +114,30 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("userId") UUID userId,
             @Param("from") LocalDate from,
             @Param("to") LocalDate to);
+
+    /* ------------------------------------------------------------ admin
+       No user_id filter, on purpose: these back /internal/admin/stats, the one query in this
+       service allowed to see across every account, and they are reachable only over the Compose
+       network by admin-service — the gateway has no route for /internal/**. */
+
+    @Query(value = """
+            SELECT count(*)                                                     AS transactionCount,
+                   count(DISTINCT user_id)                                      AS activeUsers,
+                   COALESCE(SUM(CASE WHEN kind = 'INCOME'  THEN amount END), 0) AS income,
+                   COALESCE(SUM(CASE WHEN kind = 'EXPENSE' THEN amount END), 0) AS expense
+            FROM transactions
+            """, nativeQuery = true)
+    SystemTotals findSystemTotals();
+
+    /** Every user's activity, pooled by day, for the last 30 days. Zero-activity days omitted. */
+    @Query(value = """
+            SELECT txn_date AS day,
+                   COALESCE(SUM(CASE WHEN kind = 'INCOME'  THEN amount END), 0) AS income,
+                   COALESCE(SUM(CASE WHEN kind = 'EXPENSE' THEN amount END), 0) AS expense
+            FROM transactions
+            WHERE txn_date >= (CURRENT_DATE - INTERVAL '29 days')
+            GROUP BY txn_date
+            ORDER BY txn_date
+            """, nativeQuery = true)
+    List<DailyTotal> findSystemDailyTotals();
 }

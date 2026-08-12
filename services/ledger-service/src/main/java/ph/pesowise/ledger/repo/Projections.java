@@ -58,4 +58,15 @@ public final class Projections {
 
         BigDecimal getExpense();
     }
+
+    /** Across every user — backs the admin overview, never a user-facing report. */
+    public interface SystemTotals {
+        long getTransactionCount();
+
+        long getActiveUsers();
+
+        BigDecimal getIncome();
+
+        BigDecimal getExpense();
+    }
 }
