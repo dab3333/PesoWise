@@ -17,10 +17,21 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
-    /** Uniform error shape so the frontend can render {@code message} without branching. */
-    public record ApiError(Instant timestamp, int status, String message, Map<String, String> fieldErrors) {
+    /**
+     * Uniform error shape so the frontend can render {@code message} without branching.
+     *
+     * <p>{@code code} is null for everything the frontend only displays. It is set for the
+     * handful of failures the UI must actually react to — an unverified account needs a "resend
+     * the link" button, which means recognising that case without string-matching the message.
+     */
+    public record ApiError(Instant timestamp, int status, String message, String code,
+                           Map<String, String> fieldErrors) {
         static ApiError of(HttpStatus status, String message) {
-            return new ApiError(Instant.now(), status.value(), message, Map.of());
+            return new ApiError(Instant.now(), status.value(), message, null, Map.of());
+        }
+
+        static ApiError of(HttpStatus status, String message, String code) {
+            return new ApiError(Instant.now(), status.value(), message, code, Map.of());
         }
     }
 
@@ -42,6 +53,25 @@ public class ApiExceptionHandler {
                 .body(ApiError.of(HttpStatus.NOT_FOUND, e.getMessage()));
     }
 
+    // 403, not 401: the password was right. A 401 would make the frontend claim the credentials
+    // were wrong, sending the user off to reset a password that works fine.
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ApiError> handleUnverified(EmailNotVerifiedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of(HttpStatus.FORBIDDEN, e.getMessage(), EmailNotVerifiedException.CODE));
+    }
+
+    @ExceptionHandler(AccountDisabledException.class)
+    public ResponseEntity<ApiError> handleDisabled(AccountDisabledException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of(HttpStatus.FORBIDDEN, e.getMessage(), AccountDisabledException.CODE));
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<ApiError> handleInvalidToken(InvalidTokenException e) {
+        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, e.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException e) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
@@ -49,7 +79,8 @@ public class ApiExceptionHandler {
                 .forEach(fe -> fieldErrors.putIfAbsent(fe.getField(), fe.getDefaultMessage()));
 
         return ResponseEntity.badRequest().body(new ApiError(
-                Instant.now(), HttpStatus.BAD_REQUEST.value(), "Please check the highlighted fields.", fieldErrors));
+                Instant.now(), HttpStatus.BAD_REQUEST.value(), "Please check the highlighted fields.",
+                null, fieldErrors));
     }
 
     @ExceptionHandler(Exception.class)

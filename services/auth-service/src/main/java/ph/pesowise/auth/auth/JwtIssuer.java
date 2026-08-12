@@ -42,6 +42,12 @@ public class JwtIssuer {
                 // Informational only — downstream services must key off the subject.
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
+                // Load-bearing, unlike the two above: the gateway reads this to decide whether a
+                // request may reach /api/admin/**. It is signed, so a client cannot alter it —
+                // but it is also a snapshot. A user demoted mid-session keeps admin access until
+                // their token expires, which is the price of stateless auth and the reason token
+                // lifetime is 24h rather than longer.
+                .claim("role", user.getRole().name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiry))
                 .signWith(signingKey)

@@ -26,18 +26,33 @@ export interface ApiErrorBody {
   timestamp?: string
   status?: number
   message?: string
+  /** Set only where the UI has to do something specific. See {@link ApiError.code}. */
+  code?: string
   fieldErrors?: Record<string, string>
 }
 
 export class ApiError extends Error {
   readonly status: number
+  /**
+   * A machine-readable tag for the handful of failures the UI must react to rather than merely
+   * display — currently EMAIL_NOT_VERIFIED and ACCOUNT_DISABLED. Everything else leaves this
+   * undefined and is rendered from `message` alone; matching on message text would break the
+   * moment someone rewords a sentence.
+   */
+  readonly code?: string
   readonly fieldErrors: Record<string, string>
 
-  constructor(status: number, message: string, fieldErrors: Record<string, string> = {}) {
+  constructor(
+    status: number,
+    message: string,
+    fieldErrors: Record<string, string> = {},
+    code?: string,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.fieldErrors = fieldErrors
+    this.code = code
   }
 }
 
@@ -87,20 +102,25 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-/** Pulls the message and field errors out of a failure body, tolerating non-JSON responses. */
+/** Pulls the message, field errors and code out of a failure body, tolerating non-JSON. */
 async function describeFailure(
   response: Response,
-): Promise<[string, Record<string, string>]> {
+): Promise<[string, Record<string, string>, string | undefined]> {
   try {
     const body = (await response.json()) as ApiErrorBody
-    return [body.message ?? fallbackMessage(response.status), body.fieldErrors ?? {}]
+    return [
+      body.message ?? fallbackMessage(response.status),
+      body.fieldErrors ?? {},
+      body.code,
+    ]
   } catch {
     // A gateway 503 or an nginx error page is HTML, not JSON.
-    return [fallbackMessage(response.status), {}]
+    return [fallbackMessage(response.status), {}, undefined]
   }
 }
 
 function fallbackMessage(status: number): string {
+  if (status === 403) return 'You do not have access to that.'
   if (status === 404) return 'Not found.'
   if (status === 503) return 'That service is unavailable. Please try again shortly.'
   if (status >= 500) return 'Something went wrong on our end.'

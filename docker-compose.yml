@@ -91,6 +91,22 @@ services:
       DB_PASSWORD: ${AUTH_DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+      # Promoted to ADMIN at startup, or on registration if the account does not exist yet.
+      PESOWISE_ADMIN_EMAILS: ${PESOWISE_ADMIN_EMAILS:-}
+      # Off by default: links are logged instead of sent and registrations self-verify, so the
+      # stack is usable with no SMTP account. Must be true anywhere it is publicly reachable.
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      # Follows MAIL_ENABLED when blank. Set true with delivery off to exercise the confirmation
+      # flow against links read out of `docker logs pesowise-auth-service`.
+      MAIL_REQUIRE_VERIFICATION: ${MAIL_REQUIRE_VERIFICATION:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@pesowise.app}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PesoWise}
+      SMTP_HOST: ${SMTP_HOST:-smtp-relay.brevo.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # The browser-facing origin the emailed links point at — not a service URL.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${FRONTEND_PORT}}
     networks: [pesowise]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/actuator/health"]

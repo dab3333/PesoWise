@@ -35,12 +35,22 @@ spring:
 pesowise:
   jwt:
     secret: ${JWT_SECRET}
-  # Paths that skip JWT validation. Everything else requires a valid bearer token.
   auth:
+    # Skip JWT validation entirely. Matched EXACTLY, not by prefix — adding a path here opens
+    # precisely that one URL and nothing beneath it. Every entry must be safe to call
+    # anonymously; the token-bearing ones are safe because the token is the credential.
     public-paths:
       - /api/auth/register
       - /api/auth/login
+      - /api/auth/verify-email
+      - /api/auth/resend-verification
+      - /api/auth/forgot-password
+      - /api/auth/reset-password
       - /actuator/health
+    # Require the ADMIN role on top of a valid token. Matched by PREFIX, so anything added
+    # under one of these is protected by default rather than by remembering to list it.
+    admin-paths:
+      - /api/admin/
 
 management:
   endpoints:

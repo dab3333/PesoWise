@@ -81,15 +81,24 @@ public class RecurringController {
     }
 
     /**
-     * Runs the daily pass immediately, for anyone who does not want to wait until after midnight to
-     * see it work.
+     * Runs the daily pass immediately, instead of waiting until after midnight.
      *
-     * <p>Safe to expose and safe to call twice: the pass is idempotent, which is the whole design of
-     * {@code recurring_runs}. It operates on every user's due bills, not just the caller's — the
-     * scheduler has no notion of a current user — so it returns counts rather than data.
+     * <p><b>Administrators only.</b> The pass operates on <em>every</em> user's due bills — the
+     * scheduler has no notion of a current user — so this posts real transactions to other
+     * people's ledgers. Idempotency makes it safe to call twice; it does not make it safe to
+     * expose, which is what the original version of this endpoint got wrong: it accepted the
+     * caller's id and then ignored it, leaving a system-wide operation open to any signed-in
+     * account.
+     *
+     * <p>It sits outside {@code /api/admin/**}, so the gateway's prefix rule does not cover it
+     * and the check has to happen here.
      */
     @PostMapping("/run")
-    public RunSummary runNow(@RequestHeader(Headers.USER_ID) UUID userId) {
+    public RunSummary runNow(@RequestHeader(Headers.USER_ID) UUID userId,
+                             @RequestHeader(name = Headers.USER_ROLE, required = false) String role) {
+        if (!Headers.ADMIN_ROLE.equals(role)) {
+            throw new ForbiddenException("Running the recurring pass is an administrator action.");
+        }
         return recurringService.runDueBills();
     }
 }

@@ -50,16 +50,24 @@ class JwtAuthenticationFilterTest {
         GatewayAuthProperties properties = new GatewayAuthProperties();
         properties.getJwt().setSecret(secret);
         properties.getAuth().setPublicPaths(List.of("/api/auth/login", "/actuator/health"));
+        properties.getAuth().setAdminPaths(List.of("/api/admin/"));
         return properties;
     }
 
+    /** A token with no role claim — what every token issued before this release looks like. */
     private static String tokenFor(String subject, Instant expiry) {
-        return Jwts.builder()
+        return tokenFor(subject, expiry, null);
+    }
+
+    private static String tokenFor(String subject, Instant expiry, String role) {
+        var builder = Jwts.builder()
                 .subject(subject)
                 .issuedAt(Date.from(Instant.now().minusSeconds(60)))
-                .expiration(Date.from(expiry))
-                .signWith(KEY)
-                .compact();
+                .expiration(Date.from(expiry));
+        if (role != null) {
+            builder.claim("role", role);
+        }
+        return builder.signWith(KEY).compact();
     }
 
     private ServerWebExchange run(MockServerHttpRequest request) {
@@ -163,5 +171,105 @@ class JwtAuthenticationFilterTest {
         assertThatThrownBy(() -> new JwtAuthenticationFilter(propertiesWith("too-short")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("at least 32 bytes");
+    }
+
+    // ------------------------------------------------------------------ roles
+
+    @Test
+    @DisplayName("the role claim is forwarded as X-User-Role")
+    void forwardsRole() {
+        run(MockServerHttpRequest.get("/api/transactions")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + tokenFor(USER_ID, Instant.now().plusSeconds(600), "ADMIN"))
+                .build());
+
+        assertThat(forwarded.get().getHeaders().getFirst(JwtAuthenticationFilter.USER_ROLE_HEADER))
+                .isEqualTo("ADMIN");
+    }
+
+    @Test
+    @DisplayName("a token with no role claim is treated as USER, not rejected")
+    void defaultsMissingRoleToUser() {
+        // Tokens issued before the role claim existed are still valid for their 24h lifetime.
+        // They must keep working, and must never be read as anything but the least privilege.
+        run(MockServerHttpRequest.get("/api/transactions")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenFor(USER_ID, Instant.now().plusSeconds(600)))
+                .build());
+
+        assertThat(forwarded.get().getHeaders().getFirst(JwtAuthenticationFilter.USER_ROLE_HEADER))
+                .isEqualTo("USER");
+    }
+
+    @Test
+    @DisplayName("an admin token reaches an admin path")
+    void allowsAdminOnAdminPath() {
+        ServerWebExchange exchange = run(MockServerHttpRequest.get("/api/admin/users")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + tokenFor(USER_ID, Instant.now().plusSeconds(600), "ADMIN"))
+                .build());
+
+        assertThat(exchange.getResponse().getStatusCode()).isNull();
+        assertThat(forwarded.get()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("a non-admin on an admin path is refused with 403, not 401")
+    void refusesNonAdminOnAdminPath() {
+        // 401 would send the frontend to the sign-in page, which cannot fix anything: the token
+        // is perfectly valid, it simply does not carry the authority.
+        ServerWebExchange exchange = run(MockServerHttpRequest.get("/api/admin/users")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + tokenFor(USER_ID, Instant.now().plusSeconds(600), "USER"))
+                .build());
+
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(forwarded.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("a spoofed X-User-Role header cannot grant admin access")
+    void spoofedRoleHeaderDoesNotGrantAdmin() {
+        // The whole authorisation model rests on this: the header is trusted downstream, so it
+        // has to be impossible to supply.
+        ServerWebExchange exchange = run(MockServerHttpRequest.get("/api/admin/users")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + tokenFor(USER_ID, Instant.now().plusSeconds(600), "USER"))
+                .header(JwtAuthenticationFilter.USER_ROLE_HEADER, "ADMIN")
+                .build());
+
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(forwarded.get()).isNull();
+    }
+
+    @Test
+    @DisplayName("a client-supplied X-User-Role is stripped on public paths too")
+    void stripsSpoofedRoleHeaderOnPublicPaths() {
+        run(MockServerHttpRequest.post("/api/auth/login")
+                .header(JwtAuthenticationFilter.USER_ROLE_HEADER, "ADMIN")
+                .build());
+
+        assertThat(forwarded.get()).isNotNull();
+        assertThat(forwarded.get().getHeaders().get(JwtAuthenticationFilter.USER_ROLE_HEADER)).isNull();
+    }
+
+    @Test
+    @DisplayName("an admin path still requires a token at all")
+    void adminPathStillRequiresAToken() {
+        ServerWebExchange exchange = run(MockServerHttpRequest.get("/api/admin/users").build());
+
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(forwarded.get()).isNull();
+    }
+
+    // ------------------------------------------------------------------ public path matching
+
+    @Test
+    @DisplayName("public paths are matched exactly, so a longer path sharing the prefix is not public")
+    void publicPathsAreNotPrefixMatched() {
+        // Under the old startsWith matching, "/api/auth/login-as-anyone" would have been public.
+        ServerWebExchange exchange = run(MockServerHttpRequest.post("/api/auth/loginXYZ").build());
+
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(forwarded.get()).isNull();
     }
 }

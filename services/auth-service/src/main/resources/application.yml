@@ -20,12 +20,41 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  mail:
+    host: ${SMTP_HOST:smtp-relay.brevo.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+        # Without these a provider outage hangs the request thread until the OS gives up.
+        connectiontimeout: 5000
+        timeout: 5000
+        writetimeout: 5000
 
 pesowise:
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
     issuer: pesowise-auth
+  mail:
+    # Off by default so the stack runs with no SMTP account: links are logged instead and new
+    # registrations self-verify. Turn on wherever anyone but the developer can reach the app.
+    enabled: ${MAIL_ENABLED:false}
+    # Follows `enabled` when unset. Set it to true with delivery off to walk the confirmation
+    # flow using links read out of the log, without an SMTP account.
+    require-verification: ${MAIL_REQUIRE_VERIFICATION:}
+    from: ${MAIL_FROM:no-reply@pesowise.app}
+    from-name: ${MAIL_FROM_NAME:PesoWise}
+    # Where the links in emails point. Must be the browser-facing origin, not a service URL.
+    public-url: ${PUBLIC_URL:http://localhost:3000}
+  admin:
+    # Comma-separated. These addresses are promoted to ADMIN at startup and on registration.
+    emails: ${PESOWISE_ADMIN_EMAILS:}
 
 management:
   endpoints:
@@ -35,6 +64,16 @@ management:
   endpoint:
     health:
       show-details: never
+  health:
+    # spring-boot-starter-mail registers a health indicator that opens an SMTP connection, which
+    # would make this service report DOWN whenever the mail provider is unreachable — including
+    # the default case of no credentials at all. Compose and the gateway both key off that, so
+    # a provider outage would take authentication down with it.
+    #
+    # Email is a side channel here: sign-in, token validation and /me all work without it. The
+    # service being able to send mail is not a condition of it being alive.
+    mail:
+      enabled: false
 
 logging:
   level:

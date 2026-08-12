@@ -6,10 +6,13 @@ import { AuthPage } from '@/pages/AuthPage'
 import { BudgetsPage } from '@/pages/BudgetsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { DebtsPage } from '@/pages/DebtsPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { GoalsPage } from '@/pages/GoalsPage'
 import { RecurringPage } from '@/pages/RecurringPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { TransactionsPage } from '@/pages/TransactionsPage'
+import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 
 /** Blocks rendering until the stored token has been checked, then redirects if unauthenticated. */
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -62,6 +65,26 @@ export default function App() {
           </RedirectIfAuthed>
         }
       />
+      <Route
+        path="/forgot-password"
+        element={
+          <RedirectIfAuthed>
+            <ForgotPasswordPage />
+          </RedirectIfAuthed>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <RedirectIfAuthed>
+            <ResetPasswordPage />
+          </RedirectIfAuthed>
+        }
+      />
+      {/* Not wrapped in RedirectIfAuthed: someone can be signed in on this device and still
+          need to confirm a link, and bouncing them to the dashboard would silently drop the
+          token without redeeming it. */}
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
 
       <Route
         element={

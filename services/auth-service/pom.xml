@@ -47,6 +47,13 @@
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
+        <!-- Plain SMTP for the verification and password-reset links. No vendor SDK: every
+             provider worth using speaks SMTP, and this keeps the choice a config change. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>

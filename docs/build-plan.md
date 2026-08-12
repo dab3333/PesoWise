@@ -8,6 +8,8 @@ deployable and the history reads as the build order.
 
 ## Progress
 
+### v1.0 — the MVP
+
 | # | Step | Status |
 | --- | --- | --- |
 | 1 | Scaffolding, Compose, gateway | ✅ Done |
@@ -20,6 +22,22 @@ deployable and the history reads as the build order.
 | 8 | planning-service savings goals | ✅ Done |
 | 9 | planning-service recurring bills + scheduler | ✅ Done |
 | 10 | Test matrix + README | ✅ Done |
+
+### v1.1 — mobile optimisation
+
+Screenshot-driven fixes across two rounds. See [changelog.md](changelog.md) for the full list
+with root causes.
+
+### v1.2 — admin, auth hardening, interest, deployment
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 1 | Roles, email verification, password reset | ✅ Done |
+| 2 | Debt interest accrual | ⬜ Not started |
+| 3 | admin-service (5th service) | ⬜ Not started |
+| 4 | Admin UI, About page, feedback | ⬜ Not started |
+| 5 | Landing and auth page | ⬜ Not started |
+| 6 | Deployment readiness | ⬜ Not started |
 
 ---
 
@@ -286,3 +304,216 @@ Performed end to end against the deployed stack at every step, not only at the e
 9. Confirm every chart renders, month navigation works, and dark mode has no flash on load.
 10. `curl` without a token → 401 at the gateway; a spoofed `X-User-Id` header → 401, not 200.
 11. `mvn test` green in all four services — 138/138.
+
+---
+
+# v1.2 — Admin, Auth Hardening, Interest, Deployment
+
+v1.0 delivered the six MVP features; v1.1 was a mobile pass. v1.2 turns PesoWise from a locally
+run personal app into something operable and publicly deployable: an administrative layer (which
+needs a role concept that did not exist anywhere), the one MVP feature left deliberately
+half-built (debt interest), the authentication gaps that make a public deployment irresponsible,
+and a real deployment path.
+
+## Decisions taken up front
+
+| Decision | Choice | Why not the alternative |
+| --- | --- | --- |
+| Admin backend | A 5th service, `admin-service`, owning feedback and audit, composing cross-user stats over Feign | Endpoints bolted onto the three existing services would be cheaper, but scatter admin logic and leave feedback with no owner |
+| Debt interest | Stored accrual with a scheduled monthly job | A read-time projection cannot split a payment between interest and principal, because the accrued figure is never materialised at payment time |
+| Deployment | One free VM running the existing Compose stack behind Caddy | A Vercel + PaaS split loses the same-origin nginx proxy and wakes several chained JVMs on every cold request |
+| About + feedback | A dedicated `/about` page, linked from Settings | Settings is for configuration; this is informational, and `SettingsPage.tsx` is already 514 lines |
+
+Adding a fifth service deliberately triggers the "revisit at five" note in
+[architecture.md](architecture.md) about a shared `common` module. Resolved in Phase 3: still no
+shared module.
+
+## Known blockers
+
+| # | Blocker | Blocks | Mitigation |
+| --- | --- | --- | --- |
+| 1 | No SMTP provider account | Real delivery in Phase 1 | `MAIL_ENABLED=false` logs links and self-verifies registrations, so every flow is buildable and testable without credentials |
+| 2 | Which contact details to publish | Phase 4 | Decide deliberately — a public address invites scraping; the feedback form is an alternative |
+| 3 | No domain name | HTTPS in Phase 6 | Let's Encrypt will not issue for a bare IP. A DuckDNS subdomain, or a cheap `.com` |
+| 4 | Oracle Cloud ARM capacity | Phase 6 | Free ARM instances are often unavailable in popular regions; all base images have arm64 variants, so ARM itself is not the risk |
+
+Also accepted: the stack grows from 8 containers to 10, and the frontend still has no test
+framework — verification stays Playwright-against-the-live-stack, as in v1.1.
+
+## Phase 1. Roles, email verification, password reset ✅
+
+The foundation everything else depends on: no admin panel is possible without a role.
+
+**Schema** (`V2__roles_and_verification.sql`): `users` gains `role`, `email_verified` and
+`disabled`. Two token tables store a **SHA-256 hash of the token, never the raw value** — a
+leaked backup must not be a working set of account-takeover links. Existing users are
+grandfathered to `email_verified = true`, or the first deploy of this release locks out every
+account including the developer's.
+
+**Registration no longer signs anyone in.** It returns a status, not a token: issuing a session
+for an address nobody has proven they can read is the exact thing verification exists to prevent.
+Login answers **403 with a distinguishable code** when unverified — not 401, which would make the
+frontend claim the credentials were wrong and send the user off to reset a password that works.
+
+Both checks run *after* the password comparison, so neither tells an attacker anything they could
+not already learn. `forgot-password`, `resend-verification` and `reset-password` always answer
+204 whether or not the address exists.
+
+**Mail** is plain SMTP via `spring-boot-starter-mail` — no vendor SDK, so the provider stays a
+config change. Composition lives in one class and only *delivery* swaps, which means the link a
+developer reads in the log is character-for-character the one a user receives.
+
+**Authorisation** moved into the gateway: a `role` claim in the JWT, injected downstream as
+`X-User-Role`, with `/api/admin/**` requiring ADMIN. Two changes matter more than the feature:
+
+- The new header is **stripped from every inbound request** exactly as `X-User-Id` already was,
+  in both the gateway and nginx. Downstream services trust it, so a gap here would be privilege
+  escalation that looks like a missing line rather than a bug.
+- `isPublic` changed from `startsWith` to **exact match**. The prefix match meant
+  `/api/auth/loginXYZ` was public, and this phase adds four more public endpoints under that same
+  prefix — sloppy became dangerous. Exact matching is only sufficient because no public endpoint
+  takes a path variable, which is why the tokens travel in the request body.
+
+**A pre-existing hole fixed:** `POST /api/recurring/run` accepted `X-User-Id`, ignored it, and ran
+the bill pass for *every user*, posting real transactions to other people's ledgers. Any
+signed-in account could call it. Now admin-only.
+
+**Admin bootstrap** is `PESOWISE_ADMIN_EMAILS`, applied both at startup and on registration, so
+the order of deploying and signing up does not matter. Promotion only — an address disappearing
+from an environment variable must not silently strip someone's access.
+
+### Two failures worth recording
+
+Both were caught by running the stack, not by reading the code, and neither would have surfaced
+in a unit test:
+
+1. **`CHAR(64)` broke startup.** Postgres reports `CHAR` as `bpchar`, Hibernate maps a String to
+   `varchar`, and `ddl-auto: validate` refused to start. Corrected forward in
+   `V3__token_hash_varchar.sql` rather than by editing an already-applied V2 — and `VARCHAR(64)`
+   is the better choice regardless, since Postgres stores both identically.
+2. **`spring-boot-starter-mail` silently broke the health endpoint.** It auto-registers a health
+   indicator that opens an SMTP connection, so `/actuator/health` returned 503 with no
+   credentials configured — which Compose and the gateway both key off. A mail-provider outage
+   would have taken authentication down with it. Disabled via `management.health.mail.enabled`:
+   sign-in, token validation and `/me` all work without SMTP, so being able to send mail is not a
+   condition of the service being alive.
+
+*Verified against the running stack:* register returns no token; login carries `role` in the JWT;
+`/me` exposes `role` and `emailVerified`; the closed prefix hole returns 401 on
+`/api/auth/loginXYZ`; a bad verification token 400; `forgot-password` for an unknown address 204;
+a spoofed `X-User-Id` still 401. **The critical case — a USER token plus a spoofed
+`X-User-Role: ADMIN` header on an admin-gated endpoint — returns 403, both headers spoofed
+together also 403, and a genuine ADMIN gets 200.**
+
+One caveat recorded rather than glossed over: the gateway's `/api/admin/**` rule could not be
+exercised live yet, because Spring Cloud Gateway resolves routes during handler mapping and
+returns 404 for an unrouted path *before* any global filter runs. There is no `/api/admin` route
+until Phase 3. The rule is covered by unit tests now and gets its live check then.
+
+*Tests:* auth-service 26, gateway 17, planning-service 101 — all green.
+
+## Phase 2. Debt interest ⬜
+
+Independent of every other phase; can run in parallel.
+
+`V2__debts.sql` carries `CHECK (balance <= principal)`, payments are rejected above `balance`, and
+both `paidAmount` and `percentPaid` derive from `principal − balance`. Interest touches all four.
+
+**The design avoids fighting the constraint rather than working around it:** interest never enters
+`balance`. `balance` keeps meaning *outstanding principal* and accrued interest is a separate
+column. The check is dropped regardless — it stops being a meaningful invariant once interest
+exists, and `balance >= 0` is the real guarantee.
+
+`debts` gains `start_date`, `interest_method` (SIMPLE/COMPOUND), `compounding`,
+`accrued_interest`, `interest_paid_total` and `last_accrued_on`. `debt_payments` gains
+`principal_part` and `interest_part` — stored rather than recomputed, because reversing a payment
+has to restore both columns exactly as they were.
+
+Payments apply to interest first, then principal. Settled means both are zero. `percentPaid` is
+redefined as percent of *principal* repaid and documented as such; interest is reported
+separately.
+
+A monthly job accrues, reusing the `RecurringOccurrences` idempotency pattern — a claim table
+with a unique `(debt_id, period)` index — which is already proven in this codebase. **No ledger
+write:** accrued interest is owed, not paid, and writing it would violate the boundary that
+ledger-service owns money which has actually moved.
+
+`DebtServiceTest` currently has **zero** interest tests; the one debt created with a rate never
+asserts on it.
+
+## Phase 3. admin-service ⬜
+
+A fifth Maven module at `services/admin-service` (:8084) with its own database, owning `feedback`
+and `admin_audit`.
+
+**Still no shared `common` module.** What would be shared is ~60 lines of header plumbing and a
+few DTOs; extracting it would couple five build lifecycles to save very little, and the gateway
+already centralises the actual security decision.
+
+Nothing today can query across users — every repository method has `WHERE user_id = :userId`
+baked in, with no exceptions — so the cross-user aggregates are genuinely new queries, and they
+live in the service that owns the data. They are exposed under **`/internal/admin/**`, not
+`/api/**`**: the gateway has no route for `/internal/`, so they are unreachable from the internet
+and callable only over the Compose network — the same trust model planning-service already uses
+to reach ledger-service.
+
+`POST /api/feedback` is the one non-admin endpoint and needs a gateway route *outside* the
+admin-gated prefix. Reports are streamed CSV — no PDF library for a format nobody has asked for.
+The `/api/admin/overview` fan-out must degrade per panel when a service is down, not 500.
+
+## Phase 4. Admin UI, About page, feedback ⬜
+
+Prerequisites: a **`TextArea`** in `ui.tsx` (there is no `<textarea>` anywhere in the codebase),
+and extracting `Th`/`IconButton`/`StatTile` out of the pages they are currently trapped in.
+
+`navItems` is a module-level `const` evaluated once, so role-aware navigation means computing it
+inside the component. Admin links go in a **separate sidebar group under a divider** — the mobile
+bar is already full at 3 tabs plus More.
+
+`/about` carries the app description, developer credit, contact, version and the feedback form,
+linked from a new row in Settings. The version comes from `package.json` via a Vite `define`, so
+there is exactly one source of truth.
+
+[design-system.md](design-system.md) applies unchanged: no gradients, jade as the only accent.
+The admin panel must not become a second visual language.
+
+## Phase 5. Landing and auth page ⬜
+
+`/login` and `/register` stay separate routes sharing one component. A two-column layout at `md`
+and up: a flat jade brand panel with the tagline **"Make Every Peso Count"** and a few one-line
+feature statements, form card on the right. It stacks on mobile, so the v1.1 work is preserved
+rather than redone. The shared `AuthShell` added in Phase 1 means this changes one file.
+
+A separate public marketing page is deferred — `/` is the authenticated dashboard and signed-out
+visitors already redirect, so a hero here delivers most of the value for none of the routing
+change.
+
+## Phase 6. Deployment readiness ⬜
+
+`docker-compose.prod.yml` as an override: stop publishing the four Postgres ports and the gateway
+port, leaving only the frontend reachable behind Caddy. `architecture.md` already states this
+invariant; the current Compose file violates it as a dev affordance.
+
+Because the frontend container stays on the VM behind Caddy, the nginx `/api` proxy still
+applies — requests remain same-origin, `VITE_API_URL` stays empty, and **CORS stays irrelevant**.
+That is the main practical advantage over the Vercel split.
+
+`.github/workflows/ci.yml` does not exist yet. Beyond the obvious value, it unlocks something
+specific: **GitHub Actions has a working Docker daemon, so `mvn verify -Pintegration` can run the
+Testcontainers tests there** — the ones that cannot run on this machine and were recorded as a
+known gap at the end of v1.0. That alone justifies adding CI.
+
+Hardening: regenerate `JWT_SECRET` and every database password, set `CORS_ALLOWED_ORIGIN` and
+`PUBLIC_URL` to the real hostname, confirm both trusted headers are rejected when spoofed, and
+confirm no service port answers from outside the VM.
+
+## Explicitly deferred to v1.3
+
+| Deferred | Why |
+| --- | --- |
+| PDF report export | CSV covers the need; a PDF library is a real dependency for an unasked-for format |
+| A separate marketing landing page | The auth-page hero delivers most of the value |
+| Refresh tokens and rotation | Still the first hardening item, but independent — and v1.2 is already large |
+| Full amortisation schedules | Considered and set aside in favour of stored accrual |
+| A shared `common` Maven module | Reconsidered at five services and declined |
+| Rate limiting on auth endpoints | The next security item after v1.2, before any real traffic |
