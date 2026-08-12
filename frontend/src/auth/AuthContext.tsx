@@ -4,11 +4,30 @@ import { useQueryClient } from '@tanstack/react-query'
 import { TOKEN_KEY, api, clearToken, getToken, setToken, setUnauthorizedHandler } from '@/lib/api'
 
 export type Role = 'USER' | 'ADMIN'
+export type Gender = 'MALE' | 'FEMALE' | 'UNSPECIFIED'
+export type Occupation =
+  | 'STUDENT'
+  | 'EMPLOYED_PRIVATE'
+  | 'EMPLOYED_GOVERNMENT'
+  | 'SELF_EMPLOYED'
+  | 'BUSINESS_OWNER'
+  | 'OFW'
+  | 'UNEMPLOYED'
+  | 'RETIRED'
+  | 'OTHER'
 
 export interface User {
   id: string
   email: string
   displayName: string
+  // Optional: null for any account created before these were collected, and not yet read
+  // anywhere — collected now for the personalization features that will use them later.
+  firstName?: string | null
+  lastName?: string | null
+  age?: number | null
+  gender?: Gender | null
+  occupation?: Occupation | null
+  occupationOther?: string | null
   role: Role
   emailVerified: boolean
   createdAt: string
@@ -31,13 +50,25 @@ export interface RegistrationResult {
   message: string
 }
 
+export interface RegisterInput {
+  email: string
+  password: string
+  firstName: string
+  lastName: string
+  age: number
+  gender: Gender
+  occupation: Occupation
+  /** Only meaningful (and required by the form) alongside occupation === 'OTHER'. */
+  occupationOther?: string
+}
+
 interface AuthContextValue {
   user: User | null
   /** True until the stored token has been checked, so guards don't redirect prematurely. */
   initialising: boolean
   login: (email: string, password: string) => Promise<void>
   /** Resolves to a status. It deliberately does not sign the new account in. */
-  register: (email: string, password: string, displayName: string) => Promise<RegistrationResult>
+  register: (input: RegisterInput) => Promise<RegistrationResult>
   logout: () => void
 }
 
@@ -147,12 +178,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // No token, no setUser: the account cannot be used until the emailed link is followed, so
   // there is nothing to sign in to yet.
   const register = useCallback(
-    (email: string, password: string, displayName: string) =>
-      api.post<RegistrationResult>(
-        '/api/auth/register',
-        { email, password, displayName },
-        { skipAuthRedirect: true },
-      ),
+    (input: RegisterInput) =>
+      api.post<RegistrationResult>('/api/auth/register', input, { skipAuthRedirect: true }),
     [],
   )
 

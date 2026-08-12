@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
-import { forwardRef, useId } from 'react'
+import { forwardRef, useId, useState } from 'react'
 import type { Money } from '@/api/types'
 import { formatPeso, toNumber } from '@/lib/format'
 
@@ -131,6 +131,98 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
     </div>
   )
 })
+
+/**
+ * A password `Field` with a show/hide toggle — visibility is purely local display state, so it
+ * lives entirely inside this component rather than being threaded through by every caller.
+ */
+export const PasswordField = forwardRef<HTMLInputElement, Omit<FieldProps, 'type'>>(
+  function PasswordField({ label, error, hint, className, id, ...rest }, ref) {
+    const [visible, setVisible] = useState(false)
+    const generatedId = useId()
+    const inputId = id ?? generatedId
+    const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined
+
+    return (
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={inputId} className="text-sm font-medium text-ink">
+          {label}
+        </label>
+        <div className="relative">
+          <input
+            ref={ref}
+            id={inputId}
+            type={visible ? 'text' : 'password'}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
+            className={cn(
+              'w-full rounded-lg border bg-surface px-3 py-2 pr-10 text-sm text-ink placeholder:text-subtle',
+              'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+              error ? 'border-expense' : 'border-line',
+              className,
+            )}
+            {...rest}
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((current) => !current)}
+            aria-label={visible ? 'Hide password' : 'Show password'}
+            className="absolute inset-y-0 right-0 grid w-10 place-items-center text-subtle transition-colors hover:text-body"
+          >
+            {visible ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        </div>
+        {error ? (
+          <span id={`${inputId}-error`} className="text-xs text-expense">
+            {error}
+          </span>
+        ) : hint ? (
+          <span id={`${inputId}-hint`} className="text-xs text-muted">
+            {hint}
+          </span>
+        ) : null}
+      </div>
+    )
+  },
+)
+
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-4.5"
+    >
+      <path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-4.5"
+    >
+      <path d="M17.94 17.94A10.94 10.94 0 0112 20c-6.5 0-10.5-7-10.5-7a18.4 18.4 0 015-5.94" />
+      <path d="M9.9 4.24A10.9 10.9 0 0112 4c6.5 0 10.5 7 10.5 7a18.5 18.5 0 01-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 11-4.24-4.24" />
+      <path d="M1.5 1.5l21 21" />
+    </svg>
+  )
+}
 
 /* --------------------------------------------------------------- TextArea */
 

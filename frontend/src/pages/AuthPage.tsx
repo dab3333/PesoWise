@@ -2,11 +2,33 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
+import type { Gender, Occupation } from '@/auth/AuthContext'
 import { AuthShell } from '@/components/AuthShell'
-import { Alert, Button, Field } from '@/components/ui'
+import { Select } from '@/components/form'
+import { Alert, Button, Field, PasswordField } from '@/components/ui'
 import { ApiError, api } from '@/lib/api'
 
 type Mode = 'login' | 'register'
+
+const GENDER_LABELS: Record<Gender, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  UNSPECIFIED: 'Prefer not to say',
+}
+
+// A Philippines-relevant list (OFW is a large enough share of the population to matter for a
+// PH-focused finance app) rather than a generic HR taxonomy.
+const OCCUPATION_LABELS: Record<Occupation, string> = {
+  STUDENT: 'Student',
+  EMPLOYED_PRIVATE: 'Employed — private sector',
+  EMPLOYED_GOVERNMENT: 'Employed — government',
+  SELF_EMPLOYED: 'Self-employed / freelancer',
+  BUSINESS_OWNER: 'Business owner',
+  OFW: 'OFW (Overseas Filipino Worker)',
+  UNEMPLOYED: 'Unemployed',
+  RETIRED: 'Retired',
+  OTHER: 'Other',
+}
 
 const copy: Record<Mode, { title: string; subtitle: string; submit: string }> = {
   login: {
@@ -33,7 +55,13 @@ export function AuthPage({ mode }: { mode: Mode }) {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [age, setAge] = useState('')
+  const [gender, setGender] = useState<Gender | ''>('')
+  const [occupation, setOccupation] = useState<Occupation | ''>('')
+  const [occupationOther, setOccupationOther] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -58,7 +86,23 @@ export function AuthPage({ mode }: { mode: Mode }) {
         await login(email, password)
         navigate(redirectTo, { replace: true })
       } else {
-        const result = await register(email, password, displayName)
+        // Nothing on the backend receives confirmPassword — it exists purely so a typo doesn't
+        // silently create an account with a password the user can't reproduce.
+        if (password !== confirmPassword) {
+          setFieldErrors({ confirmPassword: "Passwords don't match." })
+          return
+        }
+
+        const result = await register({
+          email,
+          password,
+          firstName,
+          lastName,
+          age: Number(age),
+          gender: gender as Gender,
+          occupation: occupation as Occupation,
+          occupationOther: occupation === 'OTHER' ? occupationOther : undefined,
+        })
         // With delivery switched off there is no inbox to check, so send them to sign in.
         if (result.verified) navigate('/login', { replace: true })
         else setPendingEmail(result.email)
@@ -110,14 +154,82 @@ export function AuthPage({ mode }: { mode: Mode }) {
         {unverified && <ResendVerification email={email} />}
 
         {mode === 'register' && (
-          <Field
-            label="Name"
-            autoComplete="name"
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-            error={fieldErrors.displayName}
-            required
-          />
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="First name"
+                autoComplete="given-name"
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                error={fieldErrors.firstName}
+                required
+              />
+              <Field
+                label="Last name"
+                autoComplete="family-name"
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                error={fieldErrors.lastName}
+                required
+              />
+            </div>
+
+            <Field
+              label="Age"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={120}
+              value={age}
+              onChange={(event) => setAge(event.target.value)}
+              error={fieldErrors.age}
+              required
+            />
+
+            <Select
+              label="Gender"
+              value={gender}
+              onChange={(event) => setGender(event.target.value as Gender)}
+              error={fieldErrors.gender}
+              required
+            >
+              <option value="" disabled>
+                Choose one
+              </option>
+              {Object.entries(GENDER_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="Occupation"
+              value={occupation}
+              onChange={(event) => setOccupation(event.target.value as Occupation)}
+              error={fieldErrors.occupation}
+              required
+            >
+              <option value="" disabled>
+                Choose one
+              </option>
+              {Object.entries(OCCUPATION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+
+            {occupation === 'OTHER' && (
+              <Field
+                label="What do you do?"
+                value={occupationOther}
+                onChange={(event) => setOccupationOther(event.target.value)}
+                error={fieldErrors.occupationOther}
+                required
+              />
+            )}
+          </>
         )}
 
         <Field
@@ -132,9 +244,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
           required
         />
 
-        <Field
+        <PasswordField
           label="Password"
-          type="password"
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -142,6 +253,17 @@ export function AuthPage({ mode }: { mode: Mode }) {
           hint={mode === 'register' ? 'At least 8 characters.' : undefined}
           required
         />
+
+        {mode === 'register' && (
+          <PasswordField
+            label="Confirm password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            error={fieldErrors.confirmPassword}
+            required
+          />
+        )}
 
         {mode === 'login' && (
           <Link

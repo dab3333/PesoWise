@@ -88,7 +88,11 @@ public class AuthService {
         User.Role role = adminProperties.normalisedEmails().contains(email) ? User.Role.ADMIN : User.Role.USER;
 
         User user = User.create(
-                email, passwordEncoder.encode(request.password()), request.displayName().trim(),
+                email, passwordEncoder.encode(request.password()),
+                request.firstName().trim(), request.lastName().trim(),
+                request.age(), request.gender(), request.occupation(),
+                request.occupation() == User.Occupation.OTHER
+                        ? trimToNull(request.occupationOther()) : null,
                 role, autoVerify);
         try {
             users.saveAndFlush(user);
@@ -271,5 +275,11 @@ public class AuthService {
     /** Emails are stored lowercased so the unique index actually prevents duplicates. */
     private static String normalise(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

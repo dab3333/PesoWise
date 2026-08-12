@@ -163,13 +163,25 @@ class AuthServiceTest {
                 new JwtIssuer(jwtProperties), mailer, mailProperties, adminProperties);
     }
 
+    /**
+     * {@code name} becomes the first name with an empty last name, so {@code getDisplayName()}
+     * still comes out as exactly {@code name} (the trailing space collapses under trim) — every
+     * existing call site and assertion in this file stays unchanged. The profile fields beyond
+     * the name are irrelevant here: this calls the service directly, bypassing the controller's
+     * {@code @Valid}, so nothing in this file exercises their validation.
+     */
+    private static RegisterRequest regReq(String email, String password, String name) {
+        return new RegisterRequest(email, password, name, "", 30, User.Gender.UNSPECIFIED,
+                User.Occupation.OTHER, "n/a");
+    }
+
     // ---------------------------------------------------------------- registration
 
     @Test
     @DisplayName("registration stores the user but issues no token until the email is confirmed")
     void registersWithoutSigningIn() {
         RegistrationResponse response = authService.register(
-                new RegisterRequest("maria@example.com", "sikreto123", "  Maria  "));
+                regReq("maria@example.com", "sikreto123", "  Maria  "));
 
         assertThat(response.email()).isEqualTo("maria@example.com");
         assertThat(response.verified()).isFalse();
@@ -185,7 +197,7 @@ class AuthServiceTest {
         mailProperties.setEnabled(false);
 
         RegistrationResponse response = authService.register(
-                new RegisterRequest("dev@example.com", "sikreto123", "Dev"));
+                regReq("dev@example.com", "sikreto123", "Dev"));
 
         assertThat(response.verified()).isTrue();
         assertThat(table.get("dev@example.com").isEmailVerified()).isTrue();
@@ -196,18 +208,18 @@ class AuthServiceTest {
     @Test
     @DisplayName("email is normalised to lowercase so casing cannot create a duplicate account")
     void normalisesEmail() {
-        authService.register(new RegisterRequest("Maria@Example.COM", "sikreto123", "Maria"));
+        authService.register(regReq("Maria@Example.COM", "sikreto123", "Maria"));
 
         assertThat(table).containsOnlyKeys("maria@example.com");
         assertThatThrownBy(() -> authService.register(
-                new RegisterRequest("MARIA@example.com", "sikreto123", "Impostor")))
+                regReq("MARIA@example.com", "sikreto123", "Impostor")))
                 .isInstanceOf(EmailAlreadyRegisteredException.class);
     }
 
     @Test
     @DisplayName("the password is never stored in plain text")
     void hashesPassword() {
-        authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+        authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
         String hash = table.get("juan@example.com").getPasswordHash();
         assertThat(hash).isNotEqualTo("sikreto123").startsWith("$2");
@@ -218,8 +230,8 @@ class AuthServiceTest {
     void promotesConfiguredAdminOnRegistration() {
         adminProperties.setEmails(List.of("Boss@Example.com"));
 
-        authService.register(new RegisterRequest("boss@example.com", "sikreto123", "Boss"));
-        authService.register(new RegisterRequest("someone@example.com", "sikreto123", "Someone"));
+        authService.register(regReq("boss@example.com", "sikreto123", "Boss"));
+        authService.register(regReq("someone@example.com", "sikreto123", "Someone"));
 
         assertThat(table.get("boss@example.com").getRole()).isEqualTo(User.Role.ADMIN);
         assertThat(table.get("someone@example.com").getRole()).isEqualTo(User.Role.USER);
@@ -248,7 +260,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("is refused with the right password while the address is unconfirmed")
         void refusesUnverified() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             assertThatThrownBy(() -> authService.login(new LoginRequest("juan@example.com", "sikreto123")))
                     .isInstanceOf(EmailNotVerifiedException.class);
@@ -267,7 +279,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("checks the password before reporting an unverified or disabled account")
         void doesNotLeakStateToAWrongPassword() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             // Unverified, but the password is wrong — the answer must be the generic one, or the
             // 403 becomes a way to confirm an address is registered without knowing the password.
@@ -307,7 +319,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("a valid link confirms the address")
         void confirmsAddress() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             authService.verifyEmail(captureVerificationToken());
 
@@ -317,7 +329,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("the same link cannot be used twice")
         void rejectsReplay() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
             String token = captureVerificationToken();
             authService.verifyEmail(token);
 
@@ -329,7 +341,7 @@ class AuthServiceTest {
         @DisplayName("an expired link is rejected")
         void rejectsExpired() {
             mailProperties.setVerificationExpiryMinutes(-1);
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             String token = captureVerificationToken();
 
@@ -348,7 +360,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("the raw token is never stored — only its hash")
         void storesOnlyTheHash() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
             String raw = captureVerificationToken();
 
             assertThat(verificationStore.getFirst().getTokenHash())
@@ -381,7 +393,7 @@ class AuthServiceTest {
         @DisplayName("resending is suppressed inside the cooldown")
         void resendRespectsCooldown() {
             mailProperties.setResendCooldownSeconds(3600);
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             authService.resendVerification("juan@example.com");
 
@@ -391,7 +403,7 @@ class AuthServiceTest {
         @Test
         @DisplayName("resending issues a second working link once the cooldown has passed")
         void resendIssuesANewLink() {
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
 
             authService.resendVerification("juan@example.com");
 
@@ -427,7 +439,7 @@ class AuthServiceTest {
         void resetVerifiesTheAddress() {
             // Someone who never clicked the confirmation link but can still read the mailbox has
             // proven exactly what verification asks for. Demanding it twice helps nobody.
-            authService.register(new RegisterRequest("juan@example.com", "sikreto123", "Juan"));
+            authService.register(regReq("juan@example.com", "sikreto123", "Juan"));
             authService.forgotPassword("juan@example.com");
 
             authService.resetPassword(new ResetPasswordRequest(captureResetToken(), "bagong-sikreto"));
@@ -489,7 +501,7 @@ class AuthServiceTest {
     // ---------------------------------------------------------------- helpers
 
     private void registerAndVerify(String email, String password) {
-        authService.register(new RegisterRequest(email, password, "Test User"));
+        authService.register(regReq(email, password, "Test User"));
         authService.verifyEmail(captureVerificationToken());
     }
 

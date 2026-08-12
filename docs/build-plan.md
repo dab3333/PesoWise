@@ -36,7 +36,7 @@ with root causes.
 | 2 | Debt interest accrual | ⬜ Deferred — skipped for now |
 | 3 | admin-service (5th service) | ✅ Done |
 | 4 | Admin UI, About page, feedback | ✅ Done |
-| 5 | Landing and auth page | ⬜ Not started |
+| 5 | Landing and auth page | ✅ Done |
 | 6 | Deployment readiness | ⬜ Not started |
 
 ---
@@ -544,16 +544,47 @@ The admin panel must not become a second visual language.
    `items-center` to `items-start` so the category dot, amount and action icons stay aligned to
    the top line instead of drifting toward the middle of a now-taller card.
 
-## Phase 5. Landing and auth page ⬜
+## Phase 5. Landing and auth page ✅
 
 `/login` and `/register` stay separate routes sharing one component. A two-column layout at `md`
-and up: a flat jade brand panel with the tagline **"Make Every Peso Count"** and a few one-line
-feature statements, form card on the right. It stacks on mobile, so the v1.1 work is preserved
-rather than redone. The shared `AuthShell` added in Phase 1 means this changes one file.
+and up: a flat jade brand panel with the tagline **"Make Every Peso Count."** and three one-line
+feature statements, form card on the right. It stacks on mobile — the panel disappears below
+`md` and the tagline moves above the card instead, so the v1.1 mobile work is preserved rather
+than redone. The shared `AuthShell` added in Phase 1 meant this changed one file
+(`components/AuthShell.tsx`), plus a small `inverted` variant on `Logo` for sitting on the jade
+fill directly.
 
 A separate public marketing page is deferred — `/` is the authenticated dashboard and signed-out
 visitors already redirect, so a hero here delivers most of the value for none of the routing
 change.
+
+### Scope grew mid-phase: auth hardening and profile fields for future personalization
+
+Requested alongside the redesign, landing in the same phase since they touch the same page:
+
+- **Show/hide password.** Neither `/login` nor `/register` had one. New `PasswordField` in
+  `ui.tsx` — a `Field` with its own local visibility toggle, so no caller has to thread that
+  state through. Applied to both the password and the new confirm-password inputs.
+- **Confirm password** on `/register`, checked client-side only — nothing about a repeated
+  password is meaningful to validate server-side, so it never reaches the API. A mismatch sets a
+  `confirmPassword` field error the same way a real backend field error would, so it renders
+  through the existing error-display path with no special case.
+- **Registration collects first name, last name (two fields, one row), age, gender, and
+  occupation** (with a free-text field that only appears when occupation is "Other") — all for
+  the account-personalization features that will read them later, not anything today's app uses.
+  `displayName` (still what every existing page reads — greeting, avatar initials, admin users
+  list, the JWT `name` claim) is now derived as `firstName + " " + lastName` at registration
+  rather than being its own form field, so nothing downstream had to change.
+- **Backend:** `V4__profile_fields.sql` / `V5__age_integer.sql` in auth-service add
+  `first_name`, `last_name`, `age`, `gender`, `occupation`, `occupation_other` to `users` — all
+  nullable, no backfill, since accounts that predate this simply have none of it and nothing
+  reads it yet. `gender` and `occupation` are `CHECK`-constrained enums, same pattern as `role`.
+  Confirm-password has no backend counterpart at all — see above.
+
+**One bug caught by actually starting the service, not by reading the code:** `age` was
+migrated as `SMALLINT`, but the entity's `Integer` field maps to Hibernate's default `INTEGER`,
+and `ddl-auto: validate` rejected the mismatch outright at startup. Fixed with a follow-up
+migration (`V5`) rather than editing `V4`, since Flyway had already recorded and applied it.
 
 ## Phase 6. Deployment readiness ⬜
 
