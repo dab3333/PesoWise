@@ -6,12 +6,12 @@ Each of these was a considered trade-off rather than a default.
 
 | Decision | Chosen | Rejected alternative, and why |
 | --- | --- | --- |
-| Service count | **4**: gateway, auth, ledger, planning | 6 (one per domain) is more textbook-correct but means six apps to boot, migrate, and debug solo. 3 would barely be microservices. |
+| Service count | **5**: gateway, auth, ledger, planning, admin | Started at 4; admin-service was added in v1.2 for feedback, audit, and cross-user overview rather than folding those into an existing service, since none of the four owns "an admin acting on the whole system" as a concept. 6+ (one per remaining domain) is more textbook-correct but means more apps to boot, migrate, and debug solo. |
 | Inter-service comms | **Synchronous REST** (OpenFeign) | Kafka or RabbitMQ decouples nicely, but adds broker containers and eventual-consistency debugging for a single-user app whose totals are cheap to compute live. |
 | Database topology | **One Postgres container per service** | A shared instance with a schema per service is cheaper on a laptop; the strict form was chosen for fidelity to the pattern. |
 | Discovery and config | **None** — Compose DNS + env vars | Eureka and Config Server earn their keep when instances scale dynamically. Here they would be two more containers and a config repo. |
 | Authentication | **Own auth-service issuing JWTs** | Keycloak is enterprise-realistic but a heavy container with real configuration overhead. |
-| Shared code | **None. No `common` module** | With four services, duplicating ~60 lines of JWT handling beats coupling every service's build to a shared artifact. Revisit at five. |
+| Shared code | **None. No `common` module** | Revisited when admin-service made it five: still declined. Extracting the ~60-line JWT/header plumbing and a handful of DTOs would couple five build lifecycles to save a small amount of duplication, and the gateway already centralises the actual security decision. |
 | Budget "spent" totals | **Computed on demand** from ledger aggregates | Denormalising into planning-service is faster but introduces a cache to invalidate. On-demand stays correct for free. |
 
 ## Service boundaries
@@ -25,25 +25,31 @@ transaction.
 
 The only port the browser talks to. Spring Cloud Gateway, no database.
 
-- Routes by path prefix to the owning service.
+- Routes by path prefix to the owning service, including `admin-service` since v1.2.
 - `JwtAuthenticationFilter` (order −100, ahead of routing) verifies the HS256 signature and
-  expiry, then sets `X-User-Id` from the token subject.
+  expiry, then sets `X-User-Id` from the token subject and `X-User-Role` from the token's `role`
+  claim.
+- Enforces that any path under `/api/admin/**` requires `role == ADMIN`, answering **403** (not
+  401 — the token is valid, the authority isn't) otherwise.
 - Fails to start if `JWT_SECRET` is shorter than 32 bytes, rather than silently accepting a weak
   key.
 - CORS is configured but unused in practice — the frontend proxies `/api` so all traffic is
   same-origin.
 
-**The security invariant.** Downstream services trust `X-User-Id` unconditionally. Two rules keep
-that safe:
+**The security invariant.** Downstream services trust `X-User-Id` and `X-User-Role`
+unconditionally. Two rules keep that safe:
 
-1. Any client-supplied `X-User-Id` is **stripped before routing** — on every request, including
-   public paths and preflights — so the header can only ever originate at the gateway. nginx
-   blanks it too, as a second layer.
+1. Any client-supplied `X-User-Id` or `X-User-Role` is **stripped before routing** — on every
+   request, including public paths and preflights — so either header can only ever originate at
+   the gateway. nginx blanks both too, as a second layer.
 2. Service ports are never published to the host in production; the gateway is the only
-   reachable entrypoint.
+   reachable entrypoint. (`docker-compose.prod.yml` is what actually enforces this — see
+   `docs/deployment.md`.)
 
-A request reaching a service *without* the header therefore bypassed the gateway, and services
-answer 401.
+A request reaching a service *without* `X-User-Id` therefore bypassed the gateway, and services
+answer 401. `/internal/admin/**` endpoints (see admin-service, below) go further: the gateway has
+no route for `/internal/` at all, so they are unreachable from outside the Compose network
+regardless of any header.
 
 ### auth-service — port 8081
 
@@ -100,9 +106,11 @@ Intent, targets, and schedules. Talks to ledger-service over Feign.
 - `budgets` — a limit per category per month, unique on `(user_id, category_id, period_month)`.
 - `goals` + `goal_contributions`, `debts` + `debt_payments`, each contribution or payment storing
   the `ledger_txn_id` of the transaction it created.
-- `recurring_bills` + `recurring_runs`, the latter carrying a unique constraint on
-  `(recurring_bill_id, period)` — the scheduler must be idempotent because container restarts
-  re-trigger it.
+- `recurring_bills` + `recurring_runs`, the latter carrying a unique constraint
+  (`ux_recurring_runs_occurrence`) on `(bill_id, due_date)` — the scheduler must be idempotent
+  because container restarts re-trigger it. The debt-interest accrual job added in v1.2 Phase 2
+  mirrors this exact pattern with its own `debt_interest_accruals` table, unique on
+  `(debt_id, period)`.
 
 **Budget progress** is computed live: fetch `/api/reports/by-category` for the month, join against
 the stored limits in memory, return `{limit, spent, remaining, percentUsed}`. Nothing cached.
@@ -148,6 +156,24 @@ Two consequences worth stating:
 Deleting a *debt*, by contrast, keeps its ledger transactions. The money really did move; erasing
 that would rewrite the user's spending history.
 
+### admin-service — port 8084
+
+Added in v1.2. Owns feedback, the audit trail, and cross-user overview — none of which fit the
+"ledger owns money moved / planning owns intent" split, since an admin acting on *another user's*
+data is a different kind of event from a user acting on their own.
+
+- `feedback` — submitted by any authenticated user via `POST /api/feedback` (not admin-gated;
+  the gateway route for it sits outside the `/api/admin/**` prefix). Admins list and resolve it.
+- `admin_audit` — one row per admin mutation (promote/demote a user, resolve feedback, trigger an
+  interest accrual pass, …), written by admin-service itself.
+- **Cross-user queries live on the owning service, not here.** auth-service, ledger-service, and
+  planning-service each expose their own `/internal/admin/**` endpoints (user list/stats,
+  transaction volume, budget/debt/recurring counts) that only admin-service's Feign client can
+  reach — the gateway has no route for `/internal/`, so they're unreachable from the internet.
+  `GET /api/admin/overview` fans out to all three over Feign and degrades per-section (null +
+  error marker) rather than 500ing the whole dashboard if one is down.
+- Reports are streamed CSV, no PDF — see `build-plan.md`'s Phase 3 retrospective for why.
+
 ## Request flow
 
 A dashboard load:
@@ -177,12 +203,18 @@ users                  accounts ──────┐                         bu
                        categories ────┤                         goals ── goal_contributions
                                       ├──▶ transactions         debts ── debt_payments
                        user_bootstrap                           recurring_bills ── recurring_runs
+
+admin db
+────────
+feedback
+admin_audit
 ```
 
-There are **no foreign keys across databases**. `user_id` appears in all three but is only a
+There are **no foreign keys across databases**. `user_id` appears in all four but is only a
 value; auth-service owns the identity. Likewise planning-service stores `category_id` and
-`ledger_txn_id` as plain UUIDs — a dangling reference is possible in principle and handled by the
-application, which is the cost of database-per-service.
+`ledger_txn_id`, and admin-service stores `user_id`/`target_id`, as plain UUIDs — a dangling
+reference is possible in principle and handled by the application, which is the cost of
+database-per-service.
 
 ## Conventions every service follows
 

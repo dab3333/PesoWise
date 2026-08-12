@@ -7,7 +7,7 @@ Java 21, Maven 3.9+, Node 20+, Docker with Compose v2+.
 ## Running the stack
 
 ```bash
-cp .env.example .env      # then edit: set JWT_SECRET and the three DB passwords
+cp .env.example .env      # then edit: set JWT_SECRET and the four DB passwords
 docker compose up --build
 ```
 
@@ -109,7 +109,7 @@ SELECT version, description, success FROM flyway_schema_history;
 ```
 
 Ports are also published to the host for GUI clients: auth `5433`, ledger `5434`,
-planning `5435`.
+planning `5435`, admin `5436`.
 
 ## Adding a migration
 
