@@ -39,6 +39,17 @@ with root causes.
 | 5 | Landing and auth page | ✅ Done |
 | 6 | Deployment readiness | ✅ Done |
 
+### v1.2.1 — data export/import
+
+Deployment (Phase 6) hit real blockers outside the app's control — see Phase 7 below. Rather than
+keep chasing a shared server, the developer pivoted to a feature: export everything to one file,
+import it back into any install. Shipped as a patch on top of v1.2 since it is one self-contained
+feature, not a phase with its own sub-steps.
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 7 | Data export/import | ✅ Done |
+
 ---
 
 ## 1. Scaffolding ✅
@@ -663,6 +674,79 @@ phase — that requires the domain and Oracle Cloud account described as open bl
 the reader's to resolve, not something to fabricate here. What's shippable now is everything the
 repo can prove without those: the override merges cleanly, the invariant holds in the generated
 config, and CI is wired up to actually run on the next push.
+
+## Phase 7. Data export/import ✅ (v1.2.1)
+
+Phase 6 shipped the deployment *mechanics*, but actually standing up a shared server hit walls
+outside the repo's control: Oracle Cloud's card verification flow rejected a virtual card (with a
+real ₱66.44 deducted anyway), Google Cloud carried the same card-verification risk, and
+self-hosting from the developer's own PC via Tailscale Funnel got as far as a public URL
+(`https://….ts.net`) before Tailscale's own certificate-issuance backend turned out to have a
+genuine ongoing outage, confirmed via their public status page rather than assumed. Rather than
+keep retrying infrastructure outside the app's control, the developer chose a different shape of
+solution entirely: **each device keeps its own local install**, and moving data between them is a
+deliberate export/import action in the app, not a live sync.
+
+**Design.** One `GET .../export` / `POST .../import` endpoint pair per owning service
+(ledger-service, planning-service) rather than a new aggregator — nothing in the codebase does a
+cross-service transaction today, and the frontend already fetches from both services separately
+for other pages. Import always **replaces**, never merges (matches "move to a new device" and
+avoids duplicate-record accumulation), and — after a design change mid-build, below — always
+**generates fresh ids** rather than reusing the file's own. See `architecture.md`'s ledger-service
+and planning-service sections for the full id-remapping mechanics.
+
+**The design changed once, after building the first version.** The first pass preserved the
+file's original ids, on the reasoning that a full wipe-before-reinsert removes any collision risk
+— which is true for restoring your *own* backup, but breaks the moment two different accounts'
+data has to coexist anywhere in either database's history (unique indexes on account/category
+names, for instance, aren't scoped away by the wipe of a *different* user's row). Concretely:
+importing one account's export into a *different*, unrelated account correctly returned 409 on
+this first design — which is what the wipe-and-preserve-ids logic was supposed to do — but the
+developer's actual want, confirmed via `AskUserQuestion`, was "I want cross-account import to
+actually work," i.e. clone one account's data into another. That's a wider capability than restore
+alone, so the fix was structural: generate fresh ids on every import and return the old-id →
+new-id maps so the importing side can remap every cross-reference. This makes "restore my own
+backup" and "load someone else's export into a different account" the exact same code path, with
+no special-casing on whose file it is.
+
+**Two bugs, both found only by testing against the live Docker Compose stack — reading the code
+said both versions were correct:**
+
+1. **Hibernate flushes inserts before deletes, regardless of call order.** `deleteByUserId` is a
+   Spring Data *derived* delete query — it loads matching entities and calls
+   `EntityManager.remove()`, deferred until flush exactly like `persist()`. Hibernate's flush
+   always runs inserts before deletes, so a re-imported row sharing a unique key (e.g. the
+   account name "Cash") with a row the code had *already called delete on* collided with it,
+   because the delete hadn't hit the database yet. Only surfaced with an account that already had
+   real data (a bootstrap-seeded "Cash" account from having logged in before) — the first several
+   rounds of curl-based verification used fresh accounts created without ever hitting the
+   dashboard, so bootstrap never ran and the collision never had anything to collide with. Fixed
+   with an explicit `entityManager.flush()` right after the deletes, in both services.
+2. **A stale frontend container.** After redesigning the import payload shape (planning's import
+   now needs the ledger id maps wrapped alongside its own export), the ledger-service and
+   planning-service *containers* were rebuilt and reverified, but the frontend container was not
+   — it kept serving the previous build, which posted the old, unwrapped payload. Backend logs
+   showed a `NullPointerException` on a field that should have been impossible to be null;
+   Playwright driving the actual browser (not curl) was what surfaced the real request body and
+   made the mismatch obvious. `docker compose up -d --build frontend` was the entire fix — no code
+   change needed.
+
+Both were only caught because verification ran against the running app end-to-end (register two
+accounts, populate one, export, import into the other, confirm both sides), per this project's
+standing practice — reading the diff would have called both versions correct.
+
+**Frontend.** `DataCard` on the Settings page: an Export button, an Import button behind a hidden
+file input, and a `ConfirmDialog` extended with `requireTypedConfirmation="REPLACE"` — the first
+action in the app more destructive than a single click should gate. Two follow-up polish passes,
+both caught by the developer using the feature rather than by reading the code: no success
+feedback after a completed export or import (fixed with a new `success` tone on the shared
+`Alert` component, reusing the income/jade semantic colour), and the Export/Import rows wrapping
+awkwardly at tablet and narrow-desktop widths because the label block had no width constraint
+against the button (fixed with an explicit `flex-col sm:flex-row` breakpoint instead of a bare
+`flex-wrap`).
+
+`docs/data-migration.md` — the manual `pg_dump`/`psql` walkthrough this feature replaces — is
+removed; it was never more than a stopgap for a workflow the app now does itself.
 
 ## Explicitly deferred to v1.3
 

@@ -99,6 +99,15 @@ Two details worth knowing:
 **Deletes archive rather than remove** once a record is referenced. Deleting a category or account
 with transactions attached would orphan them and silently rewrite historical reports.
 
+**Export/import** (Settings page, `/api/data/ledger/{export,import}`) is the exception to "never
+delete" — import is a full wipe of the current user's accounts/categories/transactions, followed
+by a reinsert of the file's contents under **freshly generated ids**, never the file's own. Fresh
+ids mean a same-account restore and loading a *different* account's export are the same code
+path, with no id collision to special-case. The tradeoff is that anything the imported file
+referenced by id (a transaction's `accountId`/`categoryId`) has to be remapped, so import returns
+the old-id → new-id maps for planning-service's own import to remap onto — see `api.md`. Also
+upserts `user_bootstrap`, so a restored account never gets reseeded on top of its own data.
+
 ### planning-service — port 8083
 
 Intent, targets, and schedules. Talks to ledger-service over Feign.
@@ -155,6 +164,16 @@ Two consequences worth stating:
 
 Deleting a *debt*, by contrast, keeps its ledger transactions. The money really did move; erasing
 that would rewrite the user's spending history.
+
+**Export/import** (`/api/data/planning/{export,import}`) is the other half of the Settings page
+feature described under ledger-service above. This service's own rows reference ledger ids
+(`category_id`/`account_id` on budgets and recurring bills, `ledger_txn_id` on debt payments,
+goal contributions, and recurring runs), so its import request carries the old-id → new-id maps
+that `POST /api/data/ledger/import` just returned, and remaps every such reference through them
+rather than reusing the file's ids. Its own parent-child references (goal → contribution, debt →
+payment, bill → run) get a second, local remap through fresh ids generated during the same
+import — the frontend is what sequences the two calls (ledger's import must complete first) since
+neither service can see the other's database to coordinate it itself.
 
 ### admin-service — port 8084
 

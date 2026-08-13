@@ -184,6 +184,44 @@ continuous axis.
 [ { "date": "2026-08-01", "income": 0, "expense": 0 } ]
 ```
 
+### Data export/import
+
+Backs the Settings page's "Export data" / "Import data" feature — see `architecture.md`'s note
+on why this is one endpoint pair per owning service rather than a single aggregator.
+
+#### `GET /api/data/ledger/export`
+
+Every account, category, and transaction the user owns, with original ids and timestamps intact.
+
+```json
+{ "accounts": [ { "id": "…", "name": "Cash", "type": "CASH", "openingBalance": 0,
+    "archived": false, "createdAt": "…" } ],
+  "categories": [ { "id": "…", "name": "Groceries", "kind": "EXPENSE", "bucket": "NEEDS",
+    "color": "#0f8a6c", "system": true, "archived": false, "createdAt": "…" } ],
+  "transactions": [ { "id": "…", "accountId": "…", "categoryId": "…", "kind": "EXPENSE",
+    "amount": 250.00, "txnDate": "2026-01-15", "note": "…", "sourceType": "MANUAL",
+    "sourceId": null, "createdAt": "…" } ] }
+```
+
+#### `POST /api/data/ledger/import` → 200
+
+Body is the same shape `GET .../export` returns. **Wipes the current user's accounts,
+categories, and transactions first, then reinserts the file's contents under freshly generated
+ids** — the file's own ids are never reused, so a same-account restore and loading a different
+account's export are the same code path with no collision risk either way. A malformed file or
+a genuine constraint violation returns **409**, not a raw 500.
+
+```json
+{ "summary": { "accounts": 1, "categories": 16, "transactions": 42 },
+  "accountIds": { "<old-id>": "<new-id>" },
+  "categoryIds": { "<old-id>": "<new-id>" },
+  "transactionIds": { "<old-id>": "<new-id>" } }
+```
+
+The three `*Ids` maps are old-id → new-id. The frontend threads them into the
+`POST /api/data/planning/import` call below, because planning-service's own data references
+ledger ids (`category_id`, `account_id`, `ledger_txn_id`) that just changed.
+
 ---
 
 ## planning-service
@@ -563,6 +601,46 @@ occurrence:
    planning-service then fails to commit, the claim rolls back and guard 1 is gone. The ledger
    answers 409, which is treated as "already recorded" rather than an error, because a retry could
    never succeed.
+
+### Data export/import
+
+The planning-service half of the Settings page's export/import feature — see ledger-service's
+section above for the endpoint pair this mirrors.
+
+#### `GET /api/data/planning/export`
+
+Every budget, goal (+ contributions), debt (+ payments and interest accrual history), and
+recurring bill (+ runs) the user owns. Parents are listed before their children.
+
+```json
+{ "budgets": [ … ], "goals": [ … ], "goalContributions": [ … ], "debts": [ … ],
+  "debtPayments": [ … ], "recurringBills": [ … ], "recurringRuns": [ … ],
+  "debtInterestAccruals": [ … ] }
+```
+
+#### `POST /api/data/planning/import` → 200
+
+```json
+{ "data": { "budgets": [ … ], "…": "…same shape as the export above" },
+  "ledgerIds": { "categoryIds": { "<old>": "<new>" }, "accountIds": { "<old>": "<new>" },
+    "transactionIds": { "<old>": "<new>" } } }
+```
+
+`data` is this service's own export. `ledgerIds` is the `accountIds`/`categoryIds`/
+`transactionIds` maps returned by `POST /api/data/ledger/import` — **that call must happen
+first**, since this one needs its result. Wipes the user's budgets, goals, debts, and recurring
+bills (their children cascade), then reinserts everything under fresh ids: every reference this
+data holds that actually belongs to ledger-service (`category_id`/`account_id` on budgets and
+recurring bills, `ledger_txn_id` on debt payments/goal contributions/recurring runs) is remapped
+through `ledgerIds` rather than reusing the file's own ids, and every reference internal to this
+service (goal → contribution, debt → payment, bill → run) is remapped through fresh ids
+generated during this same import. A malformed file or a genuine constraint violation returns
+**409**.
+
+```json
+{ "budgets": 3, "goals": 1, "goalContributions": 4, "debts": 2, "debtPayments": 6,
+  "recurringBills": 3, "recurringRuns": 18, "debtInterestAccruals": 5 }
+```
 
    Scoped to `RECURRING_BILL` deliberately — two debt payments or goal contributions on the same day
    are perfectly legitimate.

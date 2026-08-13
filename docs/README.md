@@ -16,7 +16,7 @@ Reference point for scope and tone: [Lista](https://www.lista.com.ph/personal-bu
 | [build-plan.md](build-plan.md) | The ten build steps, in order, with current progress |
 | [design-system.md](design-system.md) | Visual direction: palette, typography, components, and the rules that keep it coherent |
 | [development.md](development.md) | Running the stack, running tests, and the known environment gotchas |
-| [changelog.md](changelog.md) | Every fix made between v1.0 and v1.1, with root causes |
+| [changelog.md](changelog.md) | Every fix made between v1.0 and v1.2.1, with root causes |
 | [deployment.md](deployment.md) | Production runbook: provisioning, backups, upgrades, secret rotation |
 
 ## The short version

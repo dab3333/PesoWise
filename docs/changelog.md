@@ -1,8 +1,9 @@
-# Changelog — v1.0 → v1.1
+# Changelog — v1.0 → v1.2.1
 
-This documents every fix and change made between the v1.0 build-out and the v1.1 mobile
-optimization pass. It's organized by root cause, not by commit, since several fixes were
-corrected more than once as real-device/DevTools testing surfaced deeper issues.
+This documents every fix and change made between the v1.0 build-out and later releases. It's
+organized by root cause, not by commit, since several fixes were corrected more than once as
+real-device/DevTools testing (v1.1) or live-stack Playwright testing (v1.2.1) surfaced deeper
+issues.
 
 ## v1.0 — "v1 DONE" → "V1 Auth Fix"
 
@@ -151,6 +152,19 @@ verified via `getBoundingClientRect()` assertions showing every row's amount rig
 matching exactly.
 
 ---
+
+## v1.2.1 — Data export/import
+
+Full feature writeup, including the mid-build design change (preserve-ids → always-fresh-ids),
+is in `build-plan.md`'s Phase 7. This is the bug-history summary.
+
+| Bug | Root cause | Fix |
+| --- | --- | --- |
+| Cross-account import returned 409 on a file that should have imported cleanly | The first design preserved the file's own ids and relied on a full wipe-before-reinsert to avoid collisions — which only holds when importing into the *same* account. Importing into a *different* account could still collide with that account's own existing rows. | Redesigned import to always generate fresh ids and return old-id → new-id maps, so a same-account restore and a cross-account clone are the same code path — see `architecture.md`. |
+| Re-import failed with a generic "could not be imported" error, even after the fresh-id redesign | `deleteByUserId` is a Spring Data *derived* delete query — deferred until flush, same as `persist()`. Hibernate's flush order is always inserts before deletes regardless of call order, so a re-imported row sharing a unique key (e.g. account name "Cash") with a row already "deleted" in code — but not yet in the database — collided with it. Only reproduced with an account that already had bootstrap-seeded data; curl-only verification with brand-new accounts never triggered bootstrap and never hit the bug. | Added an explicit `entityManager.flush()` immediately after the delete calls, in both `ledger-service` and `planning-service`'s `importAll`, forcing the deletes to hit the database before any insert is queued. |
+| Planning import failed with a raw `NullPointerException` after the ledger half succeeded | The frontend Docker container was serving a build from before the payload redesign — it posted the old, unwrapped planning export instead of the new `{data, ledgerIds}` shape planning-service's import now requires. Backend logs alone made this look like a backend bug; Playwright driving the actual browser was what surfaced the real (stale) request body. | `docker compose up -d --build frontend` — no code change needed, the source was already correct. |
+| No confirmation that an export or import actually succeeded | Both actions only ever showed an error banner on failure; success was silent. | Added a `success` tone to the shared `Alert` component (reuses the income/jade semantic colour) and wired it into `DataCard` for both actions. |
+| Export/Import rows on the Settings page wrapped awkwardly at tablet and narrow-desktop widths | The label-and-button row used a bare `flex-wrap` with no width constraint on the label block, so once the description text plus button exceeded the available row width, the button dropped to its own line and lost its right-aligned position (a single wrapped flex item falls back to `flex-start`). | Explicit `flex-col sm:flex-row sm:items-center sm:justify-between` — an intentional stacked layout below the breakpoint instead of an accidental one. |
 
 ## Verification method used throughout
 
