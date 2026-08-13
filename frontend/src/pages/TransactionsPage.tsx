@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Modal, ConfirmDialog } from '@/components/Modal'
 import { DateField, Select, MoneyInput } from '@/components/form'
-import { Alert, Button, Card, EmptyState, Field, IconButton, Th } from '@/components/ui'
+import { Alert, Button, Card, EmptyState, Field, IconButton, QueryError, Th } from '@/components/ui'
 import {
   useAccounts,
   useCategories,
@@ -105,7 +105,11 @@ export function TransactionsPage() {
       </div>
 
       <Card className="p-0">
-        {rows.length === 0 && !transactions.isLoading ? (
+        {transactions.isError ? (
+          <div className="p-5">
+            <QueryError error={transactions.error} />
+          </div>
+        ) : rows.length === 0 && !transactions.isLoading ? (
           <EmptyState
             message="Nothing recorded for this month yet."
             action={<Button onClick={() => setCreating(true)}>Add your first transaction</Button>}

@@ -4,7 +4,7 @@ import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
-import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
+import { Alert, Button, Card, CardTitle, EmptyState, Field, QueryError } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
   DIRECTION_LABELS,
@@ -97,7 +97,9 @@ export function DebtsPage() {
       <div className={debts.isFetching ? 'grid gap-6 opacity-50 transition-opacity' : 'grid gap-6'}>
         <Card>
           <CardTitle>Outstanding</CardTitle>
-          {active.length === 0 && !debts.isLoading ? (
+          {debts.isError ? (
+            <QueryError error={debts.error} />
+          ) : active.length === 0 && !debts.isLoading ? (
             <EmptyState
               message="No outstanding debts. Nakakatuwa."
               action={<Button onClick={() => setCreating(true)}>Add a debt</Button>}

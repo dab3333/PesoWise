@@ -6,7 +6,7 @@ import { useRecurringBills } from '@/api/useRecurring'
 import { PageHeader } from '@/components/PageHeader'
 import { MonthNav } from '@/components/MonthNav'
 import { Meter } from '@/components/Meter'
-import { Card, CardTitle, StatTile } from '@/components/ui'
+import { Card, CardTitle, QueryError, StatTile } from '@/components/ui'
 import { LazyDailyTrendChart, LazySpendByCategoryChart } from '@/components/LazyCharts'
 import {
   useAccounts,
@@ -62,14 +62,14 @@ export function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardTitle>Where it went</CardTitle>
-          <Loadable loading={byCategory.isLoading}>
+          <Loadable loading={byCategory.isLoading} error={byCategory.error}>
             <LazySpendByCategoryChart data={byCategory.data ?? []} />
           </Loadable>
         </Card>
 
         <Card>
           <CardTitle>Day by day</CardTitle>
-          <Loadable loading={daily.isLoading}>
+          <Loadable loading={daily.isLoading} error={daily.error}>
             <LazyDailyTrendChart data={daily.data ?? []} />
           </Loadable>
         </Card>
@@ -114,7 +114,7 @@ export function DashboardPage() {
           >
             Budget progress
           </CardTitle>
-          <Loadable loading={budgets.isLoading}>
+          <Loadable loading={budgets.isLoading} error={budgets.error}>
             {(budgets.data?.budgeted.length ?? 0) === 0 ? (
               <p className="py-6 text-center text-sm text-muted">
                 No budgets set for this month.{' '}
@@ -152,7 +152,7 @@ export function DashboardPage() {
           >
             The 70-20-10 split
           </CardTitle>
-          <Loadable loading={buckets.isLoading}>
+          <Loadable loading={buckets.isLoading} error={buckets.error}>
             {toNumber(summary.data?.income ?? 0) === 0 ? (
               <p className="py-6 text-center text-sm text-muted">
                 Record this month's income to see how your spending compares to the 70-20-10 targets.
@@ -178,7 +178,18 @@ export function DashboardPage() {
 }
 
 /** Holds the previous render at reduced opacity rather than flashing a skeleton. */
-function Loadable({ loading, children }: { loading: boolean; children: React.ReactNode }) {
+function Loadable({
+  loading,
+  error,
+  children,
+}: {
+  loading: boolean
+  /** react-query's `.error` — falsy when the query hasn't failed, so callers can pass it straight
+   *  through without an extra `isError` check. */
+  error?: unknown
+  children: React.ReactNode
+}) {
+  if (error) return <QueryError error={error} />
   return <div className={loading ? 'opacity-50 transition-opacity' : 'transition-opacity'}>{children}</div>
 }
 

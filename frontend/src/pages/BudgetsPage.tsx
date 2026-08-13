@@ -5,7 +5,7 @@ import { MonthNav } from '@/components/MonthNav'
 import { Meter } from '@/components/Meter'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { MoneyInput } from '@/components/form'
-import { Alert, Button, Card, CardTitle, EmptyState } from '@/components/ui'
+import { Alert, Button, Card, CardTitle, EmptyState, QueryError } from '@/components/ui'
 import {
   useBudgetOverview,
   useCopyPreviousMonth,
@@ -108,7 +108,9 @@ export function BudgetsPage() {
             This month’s limits
           </CardTitle>
 
-          {!hasBudgets && !overview.isLoading ? (
+          {overview.isError ? (
+            <QueryError error={overview.error} />
+          ) : !hasBudgets && !overview.isLoading ? (
             <EmptyState
               message={`No budgets set for ${formatMonth(month)} yet.`}
               action={<Button onClick={() => setSuggesting(true)}>Suggest a budget</Button>}

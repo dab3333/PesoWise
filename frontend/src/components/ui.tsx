@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { forwardRef, useId, useState } from 'react'
 import type { Money } from '@/api/types'
+import { ApiError } from '@/lib/api'
 import { formatPeso, toNumber } from '@/lib/format'
 
 /** Tiny class joiner — the app has no need for a clsx dependency. */
@@ -297,6 +298,19 @@ export function Alert({
       {children}
     </div>
   )
+}
+
+/**
+ * A failed query's error, distinct from a legitimate empty state — without this, a page whose
+ * backing service is unreachable (a 503 from the gateway) silently renders the exact same "you
+ * have nothing yet" UI a genuinely-empty account would, which is actively misleading. Every list
+ * page's data hook already surfaces a friendly message via `ApiError`/`fallbackMessage` in
+ * `lib/api.ts` (e.g. "That service is unavailable. Please try again shortly.") — this component
+ * is just the one place that message gets shown.
+ */
+export function QueryError({ error }: { error: unknown }) {
+  const message = error instanceof ApiError ? error.message : 'Something went wrong loading this page.'
+  return <Alert>{message}</Alert>
 }
 
 /* ------------------------------------------------------------ Empty state */

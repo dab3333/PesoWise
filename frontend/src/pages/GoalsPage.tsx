@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
-import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
+import { Alert, Button, Card, CardTitle, EmptyState, Field, QueryError } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
   useContribute,
@@ -61,7 +61,9 @@ export function GoalsPage() {
       <div className={goals.isFetching ? 'grid gap-6 opacity-50 transition-opacity' : 'grid gap-6'}>
         <Card>
           <CardTitle>In progress</CardTitle>
-          {live.length === 0 && !goals.isLoading ? (
+          {goals.isError ? (
+            <QueryError error={goals.error} />
+          ) : live.length === 0 && !goals.isLoading ? (
             <EmptyState
               message="No goals yet. Saving for something specific makes it far likelier to happen."
               action={<Button onClick={() => setCreating(true)}>Add your first goal</Button>}

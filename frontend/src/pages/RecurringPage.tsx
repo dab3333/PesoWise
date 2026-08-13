@@ -4,7 +4,7 @@ import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
-import { Alert, Button, Card, CardTitle, EmptyState, Field } from '@/components/ui'
+import { Alert, Button, Card, CardTitle, EmptyState, Field, QueryError } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
   FREQUENCY_LABELS,
@@ -101,7 +101,9 @@ export function RecurringPage() {
 
         <Card>
           <CardTitle>Scheduled</CardTitle>
-          {active.length === 0 && !bills.isLoading ? (
+          {bills.isError ? (
+            <QueryError error={bills.error} />
+          ) : active.length === 0 && !bills.isLoading ? (
             <EmptyState
               message="No recurring bills yet. Adding them shows what's already committed before you plan the rest."
               action={<Button onClick={() => setCreating(true)}>Add your first bill</Button>}
