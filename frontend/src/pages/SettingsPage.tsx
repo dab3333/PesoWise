@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useRef, useState } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
@@ -25,6 +25,13 @@ import {
   type CategoryInput,
   type Kind,
 } from '@/api/types'
+import {
+  describeCounts,
+  exportData,
+  parseExportFile,
+  useImportData,
+  type PesoWiseExportFile,
+} from '@/api/useDataTransfer'
 import { ApiError } from '@/lib/api'
 import { formatPeso } from '@/lib/format'
 
@@ -48,6 +55,7 @@ export function SettingsPage() {
         <AccountsCard />
         <CategoriesCard />
         <AppearanceCard />
+        <DataCard />
 
         <Link
           to="/about"
@@ -486,6 +494,133 @@ function AppearanceCard() {
           </button>
         ))}
       </div>
+    </Card>
+  )
+}
+
+/* ------------------------------------------------------------------------ data */
+
+function DataCard() {
+  const importData = useImportData()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [exporting, setExporting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [pendingImport, setPendingImport] = useState<PesoWiseExportFile | null>(null)
+
+  async function onExport() {
+    setExporting(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      await exportData()
+      setSuccess('Export downloaded.')
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not export your data.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function onFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setError(null)
+    setSuccess(null)
+    try {
+      setPendingImport(await parseExportFile(file))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not read that file.')
+    }
+  }
+
+  function onConfirmImport() {
+    if (!pendingImport) return
+    const counts = describeCounts(pendingImport)
+    importData.mutate(pendingImport, {
+      onSuccess: () => {
+        setPendingImport(null)
+        setSuccess(`Import complete. Replaced with ${counts}.`)
+      },
+      onError: (caught) => {
+        setError(caught instanceof Error ? caught.message : 'Import failed.')
+        setPendingImport(null)
+      },
+    })
+  }
+
+  return (
+    <Card>
+      <CardTitle>Your data</CardTitle>
+
+      {(error || success) && (
+        <div className="mb-4">
+          <Alert tone={error ? 'error' : 'success'}>{error ?? success}</Alert>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-ink">Export data</p>
+            <p className="text-xs text-muted">
+              Download every account, category, transaction, budget, goal, debt, and recurring
+              bill as one JSON file.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            loading={exporting}
+            onClick={onExport}
+            className="self-start sm:self-auto"
+          >
+            Export
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-ink">Import data</p>
+            <p className="text-xs text-muted">
+              Replaces everything above with the contents of a previously exported file.
+            </p>
+          </div>
+          <Button
+            variant="danger"
+            onClick={() => fileInputRef.current?.click()}
+            className="self-start sm:self-auto"
+          >
+            Import
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json"
+            onChange={onFileSelected}
+            className="hidden"
+          />
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={pendingImport !== null}
+        onClose={() => setPendingImport(null)}
+        onConfirm={onConfirmImport}
+        loading={importData.isPending}
+        confirmLabel="Replace my data"
+        requireTypedConfirmation="REPLACE"
+        title="Replace all your data?"
+        message={
+          pendingImport
+            ? `This file contains ${describeCounts(pendingImport)}. Importing it deletes ` +
+              `everything currently in your account and replaces it with the file's contents. ` +
+              `This cannot be undone.`
+            : ''
+        }
+      />
     </Card>
   )
 }

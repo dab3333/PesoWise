@@ -77,6 +77,23 @@ public class Goal {
         this.updatedAt = Instant.now();
     }
 
+    /** Reconstructs a goal from an export file with its original id and timestamps. */
+    public static Goal restore(
+            UUID id, UUID userId, String name, BigDecimal targetAmount, LocalDate targetDate,
+            boolean archived, String note, Instant createdAt, Instant updatedAt) {
+        Goal goal = new Goal();
+        goal.id = id;
+        goal.userId = userId;
+        goal.name = name;
+        goal.targetAmount = targetAmount;
+        goal.targetDate = targetDate;
+        goal.archived = archived;
+        goal.note = note;
+        goal.createdAt = createdAt;
+        goal.updatedAt = updatedAt;
+        return goal;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -131,5 +148,9 @@ public class Goal {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 }

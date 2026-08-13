@@ -276,11 +276,23 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function 
 
 /* ------------------------------------------------------------------ Alert */
 
-export function Alert({ children }: { children: ReactNode }) {
+export function Alert({
+  children,
+  tone = 'error',
+}: {
+  children: ReactNode
+  /** 'error' (default) covers every existing call site; 'success' reuses the income/jade
+   *  semantic colour for confirmations like a completed export or import. */
+  tone?: 'error' | 'success'
+}) {
   return (
     <div
       role="alert"
-      className="rounded-lg border border-expense/30 bg-expense/5 px-3 py-2 text-sm text-expense"
+      className={
+        tone === 'success'
+          ? 'rounded-lg border border-income/30 bg-income/5 px-3 py-2 text-sm text-income'
+          : 'rounded-lg border border-expense/30 bg-expense/5 px-3 py-2 text-sm text-expense'
+      }
     >
       {children}
     </div>

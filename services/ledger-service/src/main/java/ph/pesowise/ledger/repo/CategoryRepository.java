@@ -20,4 +20,7 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
     boolean existsByUserIdAndArchivedFalseAndNameIgnoreCase(UUID userId, String name);
 
     boolean existsByUserId(UUID userId);
+
+    /** Full wipe of one user's categories, used by data-import to reset before reinserting. */
+    void deleteByUserId(UUID userId);
 }

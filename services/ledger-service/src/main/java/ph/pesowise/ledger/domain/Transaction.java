@@ -93,6 +93,30 @@ public class Transaction {
         return transaction;
     }
 
+    /**
+     * Reconstructs a transaction from an export file with its original id and timestamp.
+     * {@code kind} is taken directly from the export rather than re-derived from a {@link
+     * Category}, since the category row is being restored in the same import pass rather than
+     * already existing to look up.
+     */
+    public static Transaction restore(
+            UUID id, UUID userId, UUID accountId, UUID categoryId, Kind kind, BigDecimal amount,
+            LocalDate txnDate, String note, SourceType sourceType, UUID sourceId, Instant createdAt) {
+        Transaction transaction = new Transaction();
+        transaction.id = id;
+        transaction.userId = userId;
+        transaction.accountId = accountId;
+        transaction.categoryId = categoryId;
+        transaction.kind = kind;
+        transaction.amount = amount;
+        transaction.txnDate = txnDate;
+        transaction.note = note;
+        transaction.sourceType = sourceType;
+        transaction.sourceId = sourceId;
+        transaction.createdAt = createdAt;
+        return transaction;
+    }
+
     /** Re-derives {@code kind} whenever the category changes, keeping the two consistent. */
     public void moveTo(Category category) {
         this.categoryId = category.getId();

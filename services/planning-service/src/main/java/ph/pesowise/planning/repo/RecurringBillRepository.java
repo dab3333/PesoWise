@@ -27,4 +27,10 @@ public interface RecurringBillRepository extends JpaRepository<RecurringBill, UU
 
     /** Every user's active bills. Backs the admin overview. */
     long countByActiveTrue();
+
+    /** The full set for data-export, including inactive bills. */
+    List<RecurringBill> findByUserId(UUID userId);
+
+    /** Full wipe of one user's recurring bills, used by data-import. Cascades recurring_runs. */
+    void deleteByUserId(UUID userId);
 }

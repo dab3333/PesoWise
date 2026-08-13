@@ -16,12 +16,12 @@ spring:
         - id: ledger-service
           uri: ${LEDGER_SERVICE_URL:http://localhost:8082}
           predicates:
-            - Path=/api/accounts/**,/api/categories/**,/api/transactions/**,/api/reports/**
+            - Path=/api/accounts/**,/api/categories/**,/api/transactions/**,/api/reports/**,/api/data/ledger/**
 
         - id: planning-service
           uri: ${PLANNING_SERVICE_URL:http://localhost:8083}
           predicates:
-            - Path=/api/budgets/**,/api/goals/**,/api/debts/**,/api/recurring/**
+            - Path=/api/budgets/**,/api/goals/**,/api/debts/**,/api/recurring/**,/api/data/planning/**
 
         # /api/admin/** is gated by the admin-paths rule below; /api/feedback/** is not — any
         # signed-in user can submit feedback. Both live in the same service, so one route covers

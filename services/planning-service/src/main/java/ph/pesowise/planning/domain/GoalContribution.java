@@ -65,12 +65,32 @@ public class GoalContribution {
         return contribution;
     }
 
+    /** Reconstructs a contribution from an export file with its original id and timestamp. */
+    public static GoalContribution restore(
+            UUID id, UUID userId, UUID goalId, BigDecimal amount, LocalDate contributedOn, String note,
+            UUID ledgerTxnId, Instant createdAt) {
+        GoalContribution contribution = new GoalContribution();
+        contribution.id = id;
+        contribution.goalId = goalId;
+        contribution.userId = userId;
+        contribution.amount = amount;
+        contribution.contributedOn = contributedOn;
+        contribution.note = note;
+        contribution.ledgerTxnId = ledgerTxnId;
+        contribution.createdAt = createdAt;
+        return contribution;
+    }
+
     public UUID getId() {
         return id;
     }
 
     public UUID getGoalId() {
         return goalId;
+    }
+
+    public UUID getUserId() {
+        return userId;
     }
 
     public BigDecimal getAmount() {

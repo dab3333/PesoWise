@@ -70,12 +70,31 @@ public class RecurringRun {
         this.ledgerTxnId = ledgerTxnId;
     }
 
+    /** Reconstructs a run from an export file with its original id and timestamp. */
+    public static RecurringRun restore(
+            UUID id, UUID userId, UUID billId, LocalDate dueDate, UUID ledgerTxnId, boolean skipped,
+            Instant createdAt) {
+        RecurringRun run = new RecurringRun();
+        run.id = id;
+        run.billId = billId;
+        run.userId = userId;
+        run.dueDate = dueDate;
+        run.ledgerTxnId = ledgerTxnId;
+        run.skipped = skipped;
+        run.createdAt = createdAt;
+        return run;
+    }
+
     public UUID getId() {
         return id;
     }
 
     public UUID getBillId() {
         return billId;
+    }
+
+    public UUID getUserId() {
+        return userId;
     }
 
     public LocalDate getDueDate() {

@@ -22,6 +22,12 @@ public interface DebtRepository extends JpaRepository<Debt, UUID> {
     /** Every active debt with interest switched on — what the accrual pass iterates over. */
     List<Debt> findByStatusAndInterestMethodIsNotNull(Debt.Status status);
 
+    /** The full set for data-export, including settled debts. */
+    List<Debt> findByUserId(UUID userId);
+
+    /** Full wipe of one user's debts, used by data-import. Cascades payments and accruals. */
+    void deleteByUserId(UUID userId);
+
     /**
      * Outstanding balance across every user's active debts, split by direction — the system-wide
      * equivalent of the per-user totals in {@code DebtOverview}. Not user-scoped, on purpose: this

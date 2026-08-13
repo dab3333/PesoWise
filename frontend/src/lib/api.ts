@@ -138,6 +138,16 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
 
+/** Turns a `Blob` into a native browser download with no server round trip of its own. */
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 /**
  * Downloads a file response (a CSV export, say) rather than parsing it as JSON.
  *
@@ -155,11 +165,14 @@ export async function downloadFile(path: string, filename: string): Promise<void
     throw new ApiError(response.status, ...(await describeFailure(response)))
   }
 
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+  triggerDownload(await response.blob(), filename)
+}
+
+/**
+ * Downloads a plain JS value as a `.json` file — for data built client-side (combining two
+ * services' export endpoints into one file), rather than a response already coming from the
+ * server as a file.
+ */
+export function downloadJson(filename: string, data: unknown): void {
+  triggerDownload(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), filename)
 }

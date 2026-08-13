@@ -14,4 +14,7 @@ public interface DebtPaymentRepository extends JpaRepository<DebtPayment, UUID> 
     Optional<DebtPayment> findByIdAndUserId(UUID id, UUID userId);
 
     long countByDebtId(UUID debtId);
+
+    /** The full set for data-export — every payment across all of a user's debts. */
+    List<DebtPayment> findByUserId(UUID userId);
 }

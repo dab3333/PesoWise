@@ -15,6 +15,9 @@ public interface GoalContributionRepository extends JpaRepository<GoalContributi
 
     Optional<GoalContribution> findByIdAndUserId(UUID id, UUID userId);
 
+    /** The full set for data-export — every contribution across all of a user's goals. */
+    List<GoalContribution> findByUserId(UUID userId);
+
     /**
      * Saved total and contribution count for every one of a user's goals, in one grouped query. The
      * alternative — a SUM and a COUNT per goal — is two queries per row on a page that lists them

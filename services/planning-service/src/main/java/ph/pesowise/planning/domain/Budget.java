@@ -65,6 +65,21 @@ public class Budget {
         this.updatedAt = Instant.now();
     }
 
+    /** Reconstructs a budget from an export file with its original id and timestamps. */
+    public static Budget restore(
+            UUID id, UUID userId, UUID categoryId, YearMonth month, BigDecimal limitAmount,
+            Instant createdAt, Instant updatedAt) {
+        Budget budget = new Budget();
+        budget.id = id;
+        budget.userId = userId;
+        budget.categoryId = categoryId;
+        budget.periodMonth = month.atDay(1);
+        budget.limitAmount = limitAmount;
+        budget.createdAt = createdAt;
+        budget.updatedAt = updatedAt;
+        return budget;
+    }
+
     public UUID getId() {
         return id;
     }

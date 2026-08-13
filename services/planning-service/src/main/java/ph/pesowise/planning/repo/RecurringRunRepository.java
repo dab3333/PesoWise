@@ -15,4 +15,7 @@ public interface RecurringRunRepository extends JpaRepository<RecurringRun, UUID
     boolean existsByBillIdAndDueDate(UUID billId, LocalDate dueDate);
 
     long countByBillId(UUID billId);
+
+    /** The full set for data-export — every run across all of a user's recurring bills. */
+    List<RecurringRun> findByUserId(UUID userId);
 }

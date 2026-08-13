@@ -76,6 +76,24 @@ public class DebtPayment {
         return payment;
     }
 
+    /** Reconstructs a payment from an export file with its original id and timestamp. */
+    public static DebtPayment restore(
+            UUID id, UUID userId, UUID debtId, BigDecimal amount, BigDecimal principalPart, BigDecimal interestPart,
+            LocalDate paidOn, String note, UUID ledgerTxnId, Instant createdAt) {
+        DebtPayment payment = new DebtPayment();
+        payment.id = id;
+        payment.debtId = debtId;
+        payment.userId = userId;
+        payment.amount = amount;
+        payment.principalPart = principalPart;
+        payment.interestPart = interestPart;
+        payment.paidOn = paidOn;
+        payment.note = note;
+        payment.ledgerTxnId = ledgerTxnId;
+        payment.createdAt = createdAt;
+        return payment;
+    }
+
     public UUID getId() {
         return id;
     }

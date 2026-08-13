@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 /**
@@ -74,6 +74,7 @@ export function ConfirmDialog({
   message,
   confirmLabel = 'Delete',
   loading = false,
+  requireTypedConfirmation,
 }: {
   open: boolean
   onClose: () => void
@@ -82,14 +83,48 @@ export function ConfirmDialog({
   message: string
   confirmLabel?: string
   loading?: boolean
+  /**
+   * When set, the confirm button stays disabled until this exact string is typed into a text
+   * field — for actions more destructive than a single click should gate, like replacing all of
+   * a user's data. Every other call site leaves this unset and keeps the one-click behaviour.
+   */
+  requireTypedConfirmation?: string
 }) {
+  const [typed, setTyped] = useState('')
+  const gated = requireTypedConfirmation !== undefined
+  const disabled = loading || (gated && typed !== requireTypedConfirmation)
+
   return (
-    <Modal open={open} onClose={onClose} title={title}>
+    <Modal
+      open={open}
+      onClose={() => {
+        setTyped('')
+        onClose()
+      }}
+      title={title}
+    >
       <p className="text-sm text-body">{message}</p>
+      {gated && (
+        <div className="mt-4 flex flex-col gap-1.5">
+          <label htmlFor="confirm-typed" className="text-sm font-medium text-ink">
+            Type <span className="font-mono">{requireTypedConfirmation}</span> to confirm
+          </label>
+          <input
+            id="confirm-typed"
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+            autoComplete="off"
+            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          />
+        </div>
+      )}
       <div className="mt-5 flex justify-end gap-2">
         <button
           type="button"
-          onClick={onClose}
+          onClick={() => {
+            setTyped('')
+            onClose()
+          }}
           className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-surface-muted"
         >
           Cancel
@@ -97,7 +132,7 @@ export function ConfirmDialog({
         <button
           type="button"
           onClick={onConfirm}
-          disabled={loading}
+          disabled={disabled}
           className="rounded-lg bg-expense px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           {confirmLabel}

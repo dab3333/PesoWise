@@ -73,6 +73,27 @@ public class Category {
         return category;
     }
 
+    /**
+     * Reconstructs a category from an export file with its original id, timestamp, and exact
+     * bucket — unlike {@link #create}, this does not default a null expense bucket to
+     * {@code NEEDS}, since a faithful restore should reproduce exactly what was exported.
+     */
+    public static Category restore(
+            UUID id, UUID userId, String name, Kind kind, Bucket bucket, String color, boolean system,
+            boolean archived, Instant createdAt) {
+        Category category = new Category();
+        category.id = id;
+        category.userId = userId;
+        category.name = name;
+        category.kind = kind;
+        category.bucket = bucket;
+        category.color = color;
+        category.system = system;
+        category.archived = archived;
+        category.createdAt = createdAt;
+        return category;
+    }
+
     public UUID getId() {
         return id;
     }

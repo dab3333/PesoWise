@@ -57,6 +57,21 @@ public class DebtInterestAccrual {
         return accrual;
     }
 
+    /** Reconstructs an accrual record from an export file with its original id and timestamp. */
+    public static DebtInterestAccrual restore(
+            UUID id, UUID userId, UUID debtId, LocalDate period, BigDecimal amount, BigDecimal balanceAtAccrual,
+            Instant createdAt) {
+        DebtInterestAccrual accrual = new DebtInterestAccrual();
+        accrual.id = id;
+        accrual.debtId = debtId;
+        accrual.userId = userId;
+        accrual.period = period;
+        accrual.amount = amount;
+        accrual.balanceAtAccrual = balanceAtAccrual;
+        accrual.createdAt = createdAt;
+        return accrual;
+    }
+
     public UUID getId() {
         return id;
     }

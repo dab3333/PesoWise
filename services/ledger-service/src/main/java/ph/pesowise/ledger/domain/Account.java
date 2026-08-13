@@ -61,6 +61,26 @@ public class Account {
         return account;
     }
 
+    /**
+     * Reconstructs an account from an export file with its original id and timestamp, rather than
+     * generating fresh ones — an import always wipes the user's data first, so there is no
+     * collision to avoid, and preserving ids keeps transactions' {@code account_id} pointing at
+     * the right row with no remapping.
+     */
+    public static Account restore(
+            UUID id, UUID userId, String name, AccountType type, BigDecimal openingBalance,
+            boolean archived, Instant createdAt) {
+        Account account = new Account();
+        account.id = id;
+        account.userId = userId;
+        account.name = name;
+        account.type = type;
+        account.openingBalance = openingBalance;
+        account.archived = archived;
+        account.createdAt = createdAt;
+        return account;
+    }
+
     public UUID getId() {
         return id;
     }

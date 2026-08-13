@@ -25,6 +25,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     boolean existsByAccountId(UUID accountId);
 
+    /** The full set for data-export — every transaction, not a filtered page. */
+    List<Transaction> findByUserId(UUID userId);
+
+    /**
+     * Full wipe of one user's transactions, used by data-import to reset before reinserting.
+     * Must run before deleting that user's accounts/categories — {@code transactions} carries a
+     * real foreign key to both with no {@code ON DELETE CASCADE} (see V1__init.sql).
+     */
+    void deleteByUserId(UUID userId);
+
     /**
      * The filtered list. Null filters are ignored, which keeps one query serving every
      * combination the Transactions page offers instead of a Specification tree.

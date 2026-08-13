@@ -24,4 +24,10 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
 
     /** Every user's budget lines for the given month. Backs the admin overview. */
     long countByPeriodMonth(LocalDate periodMonth);
+
+    /** The full set for data-export — every budget line, not one month. */
+    List<Budget> findByUserId(UUID userId);
+
+    /** Full wipe of one user's budgets, used by data-import to reset before reinserting. */
+    void deleteByUserId(UUID userId);
 }

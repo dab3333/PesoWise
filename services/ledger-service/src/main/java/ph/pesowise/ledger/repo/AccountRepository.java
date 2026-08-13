@@ -25,6 +25,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     boolean existsByUserIdAndArchivedFalseAndNameIgnoreCase(UUID userId, String name);
 
+    /** Full wipe of one user's accounts, used by data-import to reset before reinserting. */
+    void deleteByUserId(UUID userId);
+
     /**
      * Current balance per account, computed rather than stored: opening balance + income −
      * expense. One grouped query, so listing accounts is a single round trip however many the

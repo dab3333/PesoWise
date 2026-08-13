@@ -16,8 +16,10 @@ import ph.pesowise.ledger.domain.Enums.SourceType;
 import ph.pesowise.ledger.domain.Transaction;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Request and response payloads for the ledger endpoints. */
@@ -161,6 +163,46 @@ public final class LedgerDtos {
             @Size(max = 255) String note,
             @NotNull SourceType sourceType,
             @NotNull UUID sourceId
+    ) {
+    }
+
+    /* ------------------------------------------------------------ data export */
+
+    /** A full copy of one user's ledger data — accounts, categories, transactions, in that order
+     * because {@code transactions} carries a real foreign key to the other two. */
+    public record LedgerExport(
+            List<AccountExport> accounts, List<CategoryExport> categories, List<TransactionExport> transactions
+    ) {
+    }
+
+    public record AccountExport(
+            UUID id, String name, AccountType type, BigDecimal openingBalance, boolean archived, Instant createdAt
+    ) {
+    }
+
+    public record CategoryExport(
+            UUID id, String name, Kind kind, Bucket bucket, String color, boolean system, boolean archived,
+            Instant createdAt
+    ) {
+    }
+
+    public record TransactionExport(
+            UUID id, UUID accountId, UUID categoryId, Kind kind, BigDecimal amount, LocalDate txnDate,
+            String note, SourceType sourceType, UUID sourceId, Instant createdAt
+    ) {
+    }
+
+    public record ImportSummary(int accounts, int categories, int transactions) {
+    }
+
+    /**
+     * What {@code importAll} actually did, plus the old-id → new-id maps for every table —
+     * planning-service's import needs these to remap its own {@code category_id}/{@code
+     * account_id}/{@code ledger_txn_id} references onto the ids this import just generated.
+     */
+    public record LedgerImportResult(
+            ImportSummary summary, Map<UUID, UUID> accountIds, Map<UUID, UUID> categoryIds,
+            Map<UUID, UUID> transactionIds
     ) {
     }
 }

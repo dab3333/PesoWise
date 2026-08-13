@@ -114,6 +114,29 @@ public class RecurringBill {
         this.updatedAt = Instant.now();
     }
 
+    /** Reconstructs a recurring bill from an export file with its original id and timestamps. */
+    public static RecurringBill restore(
+            UUID id, UUID userId, String name, UUID categoryId, UUID accountId, BigDecimal amount,
+            Frequency frequency, Short dayOfPeriod, LocalDate nextRunDate, boolean autoPost, boolean active,
+            String note, Instant createdAt, Instant updatedAt) {
+        RecurringBill bill = new RecurringBill();
+        bill.id = id;
+        bill.userId = userId;
+        bill.name = name;
+        bill.categoryId = categoryId;
+        bill.accountId = accountId;
+        bill.amount = amount;
+        bill.frequency = frequency;
+        bill.dayOfPeriod = dayOfPeriod;
+        bill.nextRunDate = nextRunDate;
+        bill.autoPost = autoPost;
+        bill.active = active;
+        bill.note = note;
+        bill.createdAt = createdAt;
+        bill.updatedAt = updatedAt;
+        return bill;
+    }
+
     /**
      * Moves the cursor to the occurrence after {@code nextRunDate}.
      *
@@ -223,5 +246,9 @@ public class RecurringBill {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 }

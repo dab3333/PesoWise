@@ -9,4 +9,7 @@ import java.util.UUID;
 public interface DebtInterestAccrualRepository extends JpaRepository<DebtInterestAccrual, UUID> {
 
     List<DebtInterestAccrual> findByDebtIdOrderByPeriodDesc(UUID debtId);
+
+    /** The full set for data-export — every accrual across all of a user's debts. */
+    List<DebtInterestAccrual> findByUserId(UUID userId);
 }

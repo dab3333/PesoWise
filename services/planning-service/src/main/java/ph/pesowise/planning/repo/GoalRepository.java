@@ -17,6 +17,12 @@ public interface GoalRepository extends JpaRepository<Goal, UUID> {
     /** Scoped by user id so a guessed UUID cannot reach another user's goal. */
     Optional<Goal> findByIdAndUserId(UUID id, UUID userId);
 
+    /** The full set for data-export, including archived goals. */
+    List<Goal> findByUserId(UUID userId);
+
+    /** Full wipe of one user's goals, used by data-import. Cascades goal_contributions. */
+    void deleteByUserId(UUID userId);
+
     long countByArchivedFalse();
 
     /** Target total across every active goal, every user. Backs the admin overview. */

@@ -140,6 +140,34 @@ public class Debt {
         this.updatedAt = Instant.now();
     }
 
+    /** Reconstructs a debt from an export file with its original id, timestamps, and accrual state. */
+    public static Debt restore(
+            UUID id, UUID userId, String name, Direction direction, String counterparty, BigDecimal principal,
+            BigDecimal balance, BigDecimal interestRate, LocalDate startDate, InterestMethod interestMethod,
+            BigDecimal accruedInterest, BigDecimal interestPaidTotal, LocalDate lastAccruedOn, LocalDate dueDate,
+            Status status, Instant createdAt, Instant updatedAt, Instant settledAt) {
+        Debt debt = new Debt();
+        debt.id = id;
+        debt.userId = userId;
+        debt.name = name;
+        debt.direction = direction;
+        debt.counterparty = counterparty;
+        debt.principal = principal;
+        debt.balance = balance;
+        debt.interestRate = interestRate;
+        debt.startDate = startDate;
+        debt.interestMethod = interestMethod;
+        debt.accruedInterest = accruedInterest;
+        debt.interestPaidTotal = interestPaidTotal;
+        debt.lastAccruedOn = lastAccruedOn;
+        debt.dueDate = dueDate;
+        debt.status = status;
+        debt.createdAt = createdAt;
+        debt.updatedAt = updatedAt;
+        debt.settledAt = settledAt;
+        return debt;
+    }
+
     /**
      * Applies a payment already split into its principal and interest parts — interest first,
      * per {@link #allocate}. The caller has already checked the total fits, which is what keeps
@@ -310,6 +338,10 @@ public class Debt {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 
     public Instant getSettledAt() {
