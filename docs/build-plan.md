@@ -50,6 +50,24 @@ feature, not a phase with its own sub-steps.
 | --- | --- | --- |
 | 7 | Data export/import | ✅ Done |
 
+### v1.3.0 — deferred-feature audit + selected features (Planned, not started)
+
+v1.2.1 settled the app into a **local-only, per-device** reality — no domain, no public server,
+each install moved between devices via export/import rather than a live sync. This round
+re-audited every previously-deferred feature against that reality (some were deferred *because*
+they needed hosting and are still blocked; others were deferred for unrelated reasons and are
+just as buildable on localhost). A Gmail/email-receipt auto-import idea was also considered this
+round and explicitly declined — see Phase 8's writeup for why. Full design in Phase 8–13 below.
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 8 | Foundations: rate limiting + Playwright scaffold | 📋 Planned |
+| 9 | Transfers between accounts | 📋 Planned |
+| 10 | Full amortisation schedule calculator | 📋 Planned |
+| 11 | Due-bill / budget-overrun notification center | 📋 Planned |
+| 12 | User-facing PDF monthly report | 📋 Planned |
+| 13 | Receipt/photo attachments (MinIO) | 📋 Planned |
+
 ---
 
 ## 1. Scaffolding ✅
@@ -748,13 +766,144 @@ against the button (fixed with an explicit `flex-col sm:flex-row` breakpoint ins
 `docs/data-migration.md` — the manual `pg_dump`/`psql` walkthrough this feature replaces — is
 removed; it was never more than a stopgap for a workflow the app now does itself.
 
-## Explicitly deferred to v1.3
+## Phase 8. Foundations: rate limiting + Playwright scaffold 📋 (v1.3.0, planned)
+
+Two small, self-contained pieces, done first and together so every phase after this one can add
+its own real end-to-end test as part of its own verification, instead of testing being an
+afterthought — the exact "frontend has no test framework" blocker left open since v1.2.
+
+**Deferred-feature audit, done as part of scoping this phase.** Every item previously deferred to
+v1.3 (the old table this section's own "Explicitly deferred" table below now supersedes), plus
+everything in `requirements.md`'s "explicitly out of scope" table, was re-checked against the new
+local-only-per-device reality v1.2.1 settled into. Some were deferred *because* they needed a domain/hosting and are still blocked by that
+(Kubernetes manifests, a marketing landing page, Eureka/Spring Cloud Config); others were deferred
+for unrelated reasons and turned out to be just as buildable on localhost as anywhere else — those
+became Phases 9–13. **A Gmail/email-receipt auto-import idea was raised this round and explicitly
+declined**: reading email content needs Google's `gmail.readonly` scope, which Google classifies
+as *restricted* — an app in "Testing" publishing status gets refresh tokens that expire after 7
+days unless it completes Google's app-verification process, which in turn wants a live, hosted
+privacy-policy page. That circles back to needing the exact domain/hosting this project just
+walked away from in Phase 6/7, so it stays deferred (a lower-friction email-*forwarding*
+alternative, with no OAuth at all, was also discussed and not pursued this round). Refresh token
+rotation was reconsidered too and still not selected — a 24h JWT remains adequate for local-only
+personal use.
+
+**Rate limiting (gateway).** `bucket4j` in in-memory mode — no Redis, since the gateway is a
+single instance and this is anti-brute-force, not anti-DDoS, so resetting on a restart is
+acceptable. A new filter applies only to `pesowise.auth.public-paths` (login, register,
+forgot-password, resend-verification, reset-password, verify-email — the exact list already in
+`application.yml`), keyed on client IP + exact path, configurable via
+`pesowise.rate-limit.capacity`/`refill-per-minute`. Exceeding the limit returns **429** in the
+app's one error shape, mirroring however `JwtAuthenticationFilter` already short-circuits the
+reactive (WebFlux) filter chain for its 401s.
+
+**Playwright scaffold (frontend).** New `frontend/e2e/`, `@playwright/test` as a devDependency,
+`playwright.config.ts` pointed at `http://localhost:3000` — testing against the already-running
+Compose stack, the standing practice, not a spun-up dev server. First specs: register → verify
+(dev-mode log link) → login, add a transaction end-to-end, and the Settings export/import round
+trip — the three flows this project's own history has manually re-verified the most. New `npm run
+test:e2e`, and a CI job that brings the full stack up (`docker compose up -d --build`), waits for
+health, runs the suite, tears down.
+
+## Phase 9. Transfers between accounts 📋 (v1.3.0, planned)
+
+**Model**, validated against the real schema before committing to it (`V1__init.sql`,
+`Enums.java`, `AccountRepository.java`, `TransactionRepository.java`):
+
+- `Enums.Kind` — one enum, currently `INCOME`/`EXPENSE`, shared verbatim by both `Category.kind`
+  and `Transaction.kind` — gains one new value: `TRANSFER`.
+- `Transaction` gains two nullable columns: `transfer_direction` (a new small enum, `IN`/`OUT`,
+  null for ordinary rows) and `transfer_id` (UUID, shared by a transfer's two rows so they can be
+  displayed/edited/deleted together).
+- `transactions.category_id` is `NOT NULL` with a real FK — confirmed, so transfer rows are not
+  given a null category. They instead point at a hidden system category "Transfer" (`kind =
+  TRANSFER`, `system = true`), created **lazily per user on first transfer** — confirmed that
+  adding it to `BootstrapService`'s seed list would never backfill an already-bootstrapped
+  existing user, since `ensureSeeded` short-circuits on the `user_bootstrap` marker before it
+  would ever reach the seed insert. A new `CategoryService.getOrCreateTransferCategory(userId)`
+  mirrors `ensureSeeded`'s own find-or-create-and-catch-the-race idempotency pattern.
+- Two Flyway `CHECK` constraints need a **coordinated** change: `ck_transactions_kind` and
+  `ck_categories_kind` (add `TRANSFER` to both), plus a real trap confirmed by reading the actual
+  constraint — `ck_categories_bucket_expense_only` is an **exhaustive two-branch OR** with no
+  fallback (`(kind='EXPENSE' AND bucket NOT NULL) OR (kind='INCOME' AND bucket IS NULL)`). A
+  `TRANSFER` category satisfies neither branch and would be rejected outright unless a third
+  branch (`OR (kind='TRANSFER' AND bucket IS NULL)`) is added in the same migration.
+  `Category.create`'s bucket-resolution logic already defaults `bucket` to `null` for any
+  non-`EXPENSE` kind, so only the constraint needs to change, not the application code.
+
+**Report/balance query audit** — confirmed file-by-file, fewer changes needed than first assumed:
+
+- `AccountRepository.findBalancesByUserId` **must change**. Its CASE is `WHEN kind='INCOME' THEN
+  amount ELSE -amount END` — an `ELSE` catch-all, not explicit per-kind branches — so a
+  `TRANSFER`+`IN` row would wrongly fall into `ELSE` and get subtracted. New CASE adds `OR
+  (kind='TRANSFER' AND transfer_direction='IN')` to the `THEN amount` branch.
+- `TransactionRepository.findTotalsByCategory` (`/api/reports/by-category`) **must change** — it
+  sums per category with no kind filter at all, so the hidden Transfer category would surface as
+  a spurious line item. Needs an explicit exclusion.
+- `findTotals` (`/summary`), `findDailyTotals` (`/daily`), `findExpenseTotalsByBucket`
+  (`/by-bucket`), and the admin-only `findSystemTotals`/`findSystemDailyTotals` are **confirmed
+  safe as-is** — each already uses an explicit `WHEN kind = 'INCOME'`/`'EXPENSE'` with no `ELSE`,
+  so a `TRANSFER` row contributes nothing to any of them by construction, no code change needed.
+
+**New endpoint**: `POST /api/transactions/transfer` (`fromAccountId`, `toAccountId`, `amount`,
+`txnDate`, `note`) creates both rows in one transaction, sharing a new `transfer_id`. Editing or
+deleting a transfer always acts on both rows together, enforced in `TransactionService`.
+**Frontend**: the transaction form gains a "Transfer" mode (two account pickers, no category);
+the transaction list renders transfer rows distinctly (a swap icon, "Cash → GCash").
+
+## Phase 10. Full amortisation schedule calculator 📋 (v1.3.0, planned)
+
+On-demand only — no new table, no stored schedule, matching how budget progress is already
+computed live rather than cached. `GET /api/debts/{id}/amortization?monthlyPayment=X` in
+planning-service runs the same SIMPLE/COMPOUND interest math already implemented for the real
+monthly accrual job forward against a hypothetical payment, producing a month-by-month table.
+Capped at a sane iteration limit; a payment too small to ever cover accruing interest returns
+`neverPaysOff: true` instead of looping forever. Frontend: a new "Amortisation" section on the
+Debt detail view with a hypothetical-payment input and the resulting table/payoff summary.
+
+## Phase 11. Due-bill / budget-overrun notification center 📋 (v1.3.0, planned)
+
+In-app only, deliberately — no email, no push, no new persisted table. A new `GET
+/api/notifications` in planning-service merges three things the app can already query: recurring
+bills due soon, budgets at/over their limit this month, and debts with an upcoming/overdue due
+date. "Dismiss" is local-only (localStorage per notification id) rather than a persisted "seen"
+table — an item naturally reappears if its underlying condition is still true after a day, which
+is correct behaviour for something genuinely still overdue, and keeps this phase backend-light.
+Frontend: a bell icon + badge count in `AppShell.tsx`'s header opening a dismissible panel.
+
+## Phase 12. User-facing PDF monthly report 📋 (v1.3.0, planned)
+
+Client-side generation, no new backend endpoint — reuses the exact `/api/reports/*` data the
+Dashboard already fetches (one source of truth for the numbers), avoiding a server-side PDF
+library for the same reason CSV was picked over PDF for admin reports originally. Content: the
+month's income/expense/net, budget progress bars, 70-20-10 actual-vs-target, and a category
+breakdown table — the same figures already on screen. Sequenced after Phase 9 (transfers) so it
+never ships even a day of transfers polluting its numbers.
+
+## Phase 13. Receipt/photo attachments 📋 (v1.3.0, planned)
+
+A new self-hosted `minio` Compose service (S3-compatible object storage), no host port
+published. Uploads are **proxied through ledger-service** (`POST
+/api/transactions/{id}/receipt`, multipart) rather than presigned browser uploads straight to
+MinIO — receipts are small, ledger-service already authenticates the request via the
+gateway-injected header, and this avoids exposing MinIO to the browser at all; presigned uploads
+are a revisit-if-file-sizes-become-a-problem item, not a starting point. `transactions` gains a
+nullable `receipt_key`; `GET /api/transactions/{id}/receipt` generates a short-lived presigned GET
+URL per request so the object store itself is never public. Frontend: an optional photo picker on
+the transaction form (`capture="environment"` for mobile camera capture) and a thumbnail/"View
+receipt" link.
+
+## Explicitly deferred (superseded — see Phase 8's audit above)
+
+Carried forward from the v1.3 audit, with this round's additions:
 
 | Deferred | Why |
 | --- | --- |
-| PDF report export | CSV covers the need; a PDF library is a real dependency for an unasked-for format |
-| A separate marketing landing page | The auth-page hero delivers most of the value |
-| Refresh tokens and rotation | Still the first hardening item, but independent — and v1.2 is already large |
-| Full amortisation schedules | Considered and set aside in favour of stored accrual |
-| A shared `common` Maven module | Reconsidered at five services and declined |
-| Rate limiting on auth endpoints | The next security item after v1.2, before any real traffic |
+| Gmail/email receipt auto-import | Considered this round; needs Google app verification (for the restricted `gmail.readonly` scope) to avoid a 7-day refresh-token expiry, which wants a hosted privacy-policy page — circles back to the domain/hosting this project walked away from. An email-forwarding alternative (no OAuth) was discussed and not pursued either. |
+| Refresh token rotation | Considered this round, not selected — 24h JWT still adequate for local-only personal use |
+| Kubernetes manifests, Eureka/Spring Cloud Config | No cloud target; Compose remains the only runtime |
+| A separate marketing landing page | No domain to point one at |
+| Message broker with denormalised rollups | Report queries are still fast; still premature |
+| A shared `common` Maven module | Reconsidered and declined at five services; unchanged by this release |
+| Multi-currency, shared/household budgets | Real scope, no signal either is needed |
+| CSV or bank-statement import (parsing) | Large surface area, no bank API access — distinct from this app's own JSON export/import |
