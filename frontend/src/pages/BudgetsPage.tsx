@@ -16,9 +16,18 @@ import {
   type BudgetLine,
   type Suggestion,
 } from '@/api/useBudgets'
-import { BUCKET_LABELS } from '@/api/types'
+import { BUCKET_LABELS, type Bucket } from '@/api/types'
 import { ApiError } from '@/lib/api'
 import { formatMonth, formatPeso, toMonthKey, toNumber } from '@/lib/format'
+
+/** 70-20-10 order, matching the suggester and every other bucket-ordered view in the app. */
+const BUCKET_ORDER: Bucket[] = ['NEEDS', 'WANTS', 'SAVINGS']
+
+/** Groups a bucket-tagged list into 70-20-10 order, dropping any bucket with nothing in it. */
+function groupByBucket<T extends { bucket: Bucket | null }>(lines: T[]): Array<[Bucket, T[]]> {
+  return BUCKET_ORDER.map((bucket): [Bucket, T[]] => [bucket, lines.filter((line) => line.bucket === bucket)])
+    .filter(([, group]) => group.length > 0)
+}
 
 export function BudgetsPage() {
   const [month, setMonth] = useState(() => toMonthKey(new Date()))
@@ -116,37 +125,47 @@ export function BudgetsPage() {
               action={<Button onClick={() => setSuggesting(true)}>Suggest a budget</Button>}
             />
           ) : (
-            <div className="grid gap-5 sm:grid-cols-2">
-              {(data?.budgeted ?? []).map((line) => (
-                <div key={line.categoryId} className="group">
-                  <Meter
-                    label={line.categoryName}
-                    actual={line.spent}
-                    target={line.limitAmount ?? 0}
-                    caption={
-                      line.remaining !== null && toNumber(line.remaining) >= 0
-                        ? `${formatPeso(line.remaining)} left`
-                        : `${formatPeso(Math.abs(toNumber(line.remaining ?? 0)))} over`
-                    }
-                  />
-                  {/* Hover-reveal only makes sense where hover exists — on touch there is no
-                      hover event, so opacity-0 with no override left these clickable but
-                      invisible. Visible by default below sm; hover-gated only at desktop widths. */}
-                  <div className="mt-1 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
-                    <Button
-                      variant="ghost"
-                      className="px-2 py-1 text-xs"
-                      onClick={() => setEditing(line)}
-                    >
-                      Change limit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="px-2 py-1 text-xs"
-                      onClick={() => setRemoving(line)}
-                    >
-                      Remove
-                    </Button>
+            <div className="flex flex-col gap-5">
+              {groupByBucket(data?.budgeted ?? []).map(([bucket, lines]) => (
+                <div key={bucket}>
+                  <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    {BUCKET_LABELS[bucket]}
+                  </p>
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    {lines.map((line) => (
+                      <div key={line.categoryId} className="group">
+                        <Meter
+                          label={line.categoryName}
+                          actual={line.spent}
+                          target={line.limitAmount ?? 0}
+                          caption={
+                            line.remaining !== null && toNumber(line.remaining) >= 0
+                              ? `${formatPeso(line.remaining)} left`
+                              : `${formatPeso(Math.abs(toNumber(line.remaining ?? 0)))} over`
+                          }
+                        />
+                        {/* Hover-reveal only makes sense where hover exists — on touch there is
+                            no hover event, so opacity-0 with no override left these clickable but
+                            invisible. Visible by default below sm; hover-gated only at desktop
+                            widths. */}
+                        <div className="mt-1 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                          <Button
+                            variant="ghost"
+                            className="px-2 py-1 text-xs"
+                            onClick={() => setEditing(line)}
+                          >
+                            Change limit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="px-2 py-1 text-xs"
+                            onClick={() => setRemoving(line)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -390,21 +409,30 @@ function SuggestionDialog({ month, onClose }: { month: string; onClose: () => vo
           </div>
 
           <ul className="max-h-64 divide-y divide-line overflow-auto rounded-lg border border-line">
-            {preview.lines.map((line) => (
-              <li key={line.categoryId} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <span
-                  aria-hidden
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ background: line.color }}
-                />
-                <span className="min-w-0 flex-1 truncate text-ink">{line.categoryName}</span>
-                {/* Says why the number is what it is, so the suggestion is not a black box. */}
-                {!line.fromHistory && (
-                  <span className="shrink-0 text-xs text-subtle">even split</span>
-                )}
-                <span className="tnum shrink-0 font-medium text-ink">
-                  {formatPeso(line.limitAmount)}
-                </span>
+            {groupByBucket(preview.lines).map(([bucket, lines]) => (
+              <li key={bucket}>
+                <p className="bg-surface-muted px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-muted">
+                  {BUCKET_LABELS[bucket]}
+                </p>
+                <ul className="divide-y divide-line">
+                  {lines.map((line) => (
+                    <li key={line.categoryId} className="flex items-center gap-2 px-3 py-2 text-sm">
+                      <span
+                        aria-hidden
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ background: line.color }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-ink">{line.categoryName}</span>
+                      {/* Says why the number is what it is, so the suggestion is not a black box. */}
+                      {!line.fromHistory && (
+                        <span className="shrink-0 text-xs text-subtle">even split</span>
+                      )}
+                      <span className="tnum shrink-0 font-medium text-ink">
+                        {formatPeso(line.limitAmount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>
