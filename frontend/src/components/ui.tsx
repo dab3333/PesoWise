@@ -374,6 +374,76 @@ export function IconButton({
   )
 }
 
+/* -------------------------------------------------------------- Toggle */
+
+/** A flat on/off switch — jade when on, neutral when off. No gradient, no shadow, per DESIGN.md. */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  /** Accessible name — the caller usually shows a visible label right beside it too. */
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        checked ? 'bg-accent' : 'border border-line bg-surface-muted',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'inline-block size-4 rounded-full bg-surface transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1',
+        )}
+      />
+    </button>
+  )
+}
+
+/* --------------------------------------------------------- InfoTooltip */
+
+/**
+ * A hover-for-detail hint — the browser's own title tooltip, same mechanism `IconButton` and
+ * `ThemeToggle` already rely on, rather than a custom-built tooltip component just for this.
+ */
+export function InfoTooltip({ text }: { text: string }) {
+  return (
+    <span
+      tabIndex={0}
+      role="img"
+      aria-label={text}
+      title={text}
+      className="inline-grid shrink-0 place-items-center text-muted hover:text-body"
+    >
+      <svg
+        aria-hidden
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="size-4"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5" />
+        <path d="M12 8h.01" />
+      </svg>
+    </span>
+  )
+}
+
 /* -------------------------------------------------------------- StatTile */
 
 export function StatTile({

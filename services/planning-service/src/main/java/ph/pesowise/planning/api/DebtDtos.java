@@ -21,6 +21,14 @@ public final class DebtDtos {
 
     private static final String MAX_AMOUNT = "999999999999.99";
 
+    /**
+     * @param accountId  only meaningful for {@code OWED_TO_ME} — which wallet the money actually
+     *                   left when it was lent out. Optional: some debts predate the app, or were
+     *                   never cash to begin with. Must be paired with {@code categoryId} or left
+     *                   out entirely.
+     * @param categoryId how that outflow should appear in spending reports, same role as on
+     *                   {@link PaymentRequest}
+     */
     public record DebtRequest(
             @NotBlank @Size(max = 80) String name,
             @NotNull Debt.Direction direction,
@@ -38,7 +46,9 @@ public final class DebtDtos {
             Debt.InterestMethod interestMethod,
             /** When accrual starts counting from — immutable once the debt exists. */
             @NotNull LocalDate startDate,
-            LocalDate dueDate
+            LocalDate dueDate,
+            UUID accountId,
+            UUID categoryId
     ) {
     }
 

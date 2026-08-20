@@ -335,7 +335,7 @@ class DebtServiceTest {
         DebtResponse response = debtService.create(USER, new DebtRequest(
                 "  Kuya Ben  ", Debt.Direction.OWED_BY_ME, " Ben ",
                 new BigDecimal("10000.00"), new BigDecimal("2.500"), null, START,
-                LocalDate.of(2026, 12, 31)));
+                LocalDate.of(2026, 12, 31), null, null));
 
         assertThat(response.name()).isEqualTo("Kuya Ben");
         assertThat(response.counterparty()).isEqualTo("Ben");
@@ -349,10 +349,60 @@ class DebtServiceTest {
     void interestMethodNeedsARate() {
         assertThatThrownBy(() -> debtService.create(USER, new DebtRequest(
                 "Kuya Ben", Debt.Direction.OWED_BY_ME, null,
-                new BigDecimal("10000.00"), null, InterestMethod.SIMPLE, START, null)))
+                new BigDecimal("10000.00"), null, InterestMethod.SIMPLE, START, null, null, null)))
                 .isInstanceOf(BadRequestException.class);
 
         verify(debts, never()).save(any());
+    }
+
+    /* --------------------------------------------------------------- lending posts a disbursement */
+
+    @Test
+    @DisplayName("lending money (OWED_TO_ME) with an account posts a DEBT_DISBURSEMENT outflow")
+    void owedToMeWithAccountPostsDisbursement() {
+        when(debts.save(any(Debt.class))).thenAnswer(call -> call.getArgument(0));
+
+        DebtResponse response = debtService.create(USER, new DebtRequest(
+                "Lent to Juan", Debt.Direction.OWED_TO_ME, "Juan",
+                new BigDecimal("3000.00"), null, null, START, null, ACCOUNT, CATEGORY));
+
+        verify(ledger).post(eq(USER), eq(SourceType.DEBT_DISBURSEMENT), eq(response.id()),
+                eq(ACCOUNT), eq(CATEGORY), eq(new BigDecimal("3000.00")), eq(START), any());
+    }
+
+    @Test
+    @DisplayName("borrowing money (OWED_BY_ME) with an account is rejected — nothing has moved yet")
+    void owedByMeWithAccountIsRejected() {
+        assertThatThrownBy(() -> debtService.create(USER, new DebtRequest(
+                "Kuya Ben", Debt.Direction.OWED_BY_ME, null,
+                new BigDecimal("10000.00"), null, null, START, null, ACCOUNT, CATEGORY)))
+                .isInstanceOf(BadRequestException.class);
+
+        verify(debts, never()).save(any());
+        verify(ledger, never()).post(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("an account without a category (or vice versa) is rejected")
+    void disbursementRequiresBothOrNeither() {
+        assertThatThrownBy(() -> debtService.create(USER, new DebtRequest(
+                "Lent to Juan", Debt.Direction.OWED_TO_ME, "Juan",
+                new BigDecimal("3000.00"), null, null, START, null, ACCOUNT, null)))
+                .isInstanceOf(BadRequestException.class);
+
+        verify(debts, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("lending money with no account leaves the ledger untouched")
+    void owedToMeWithNoAccountPostsNothing() {
+        when(debts.save(any(Debt.class))).thenAnswer(call -> call.getArgument(0));
+
+        debtService.create(USER, new DebtRequest(
+                "Lent to Juan", Debt.Direction.OWED_TO_ME, "Juan",
+                new BigDecimal("3000.00"), null, null, START, null, null, null));
+
+        verify(ledger, never()).post(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     /* -------------------------------------------------------- interest-first payment allocation */

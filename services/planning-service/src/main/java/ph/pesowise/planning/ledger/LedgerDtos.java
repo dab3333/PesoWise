@@ -28,7 +28,7 @@ public final class LedgerDtos {
     }
 
     public enum SourceType {
-        MANUAL, RECURRING_BILL, DEBT_PAYMENT, GOAL_CONTRIBUTION
+        MANUAL, RECURRING_BILL, DEBT_PAYMENT, GOAL_CONTRIBUTION, DEBT_DISBURSEMENT
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

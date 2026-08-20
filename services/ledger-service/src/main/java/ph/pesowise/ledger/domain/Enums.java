@@ -24,6 +24,6 @@ public final class Enums {
 
     /** What created a transaction. Anything other than MANUAL came from planning-service. */
     public enum SourceType {
-        MANUAL, RECURRING_BILL, DEBT_PAYMENT, GOAL_CONTRIBUTION
+        MANUAL, RECURRING_BILL, DEBT_PAYMENT, GOAL_CONTRIBUTION, DEBT_DISBURSEMENT
     }
 }

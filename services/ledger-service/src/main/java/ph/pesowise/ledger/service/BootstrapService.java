@@ -60,7 +60,10 @@ public class BootstrapService {
 
             // Savings — 10%
             new Seed("Savings", Kind.EXPENSE, Bucket.SAVINGS, "#0f8a6c"),
-            new Seed("Debt Payment", Kind.EXPENSE, Bucket.SAVINGS, "#64748b")
+            new Seed("Debt Payment", Kind.EXPENSE, Bucket.SAVINGS, "#64748b"),
+            // Catches the outflow when a debt is created with "I already gave them this money"
+            // switched on — see DebtService.create's disbursement handling.
+            new Seed("Money Lent", Kind.EXPENSE, Bucket.SAVINGS, "#2563eb")
     );
 
     private final AccountRepository accounts;

@@ -32,7 +32,11 @@ import java.util.UUID;
  *
  * <p>The interesting part is {@link #recordPayment}: a payment has to appear in two places — the
  * debt balance here, and the cash movement in the ledger. Money itself is only ever recorded in the
- * ledger; this service keeps a pointer to that transaction.
+ * ledger; this service keeps a pointer to that transaction. {@link #create} can carry the same
+ * dual-write for an {@code OWED_TO_ME} debt — lending money is itself a cash outflow, unlike
+ * borrowing, which moves nothing until a payment is made — but only when the caller opts in with an
+ * account and category; plenty of debts (an old IOU, a non-cash favor) never touched the ledger at
+ * all.
  */
 @Service
 public class DebtService {
@@ -82,7 +86,9 @@ public class DebtService {
             throw new BadRequestException("Choose an interest rate to go with that accrual method.");
         }
 
-        Debt debt = debts.save(Debt.create(
+        boolean recordDisbursement = validateDisbursement(request);
+
+        Debt debt = Debt.create(
                 userId,
                 request.name().trim(),
                 request.direction(),
@@ -91,9 +97,41 @@ public class DebtService {
                 request.interestRate(),
                 request.interestMethod(),
                 request.startDate(),
-                request.dueDate()));
+                request.dueDate());
+
+        // Someone owing you money usually means cash already left an account — unlike owing
+        // someone else, where nothing has moved yet at creation time. Posted before the debt
+        // itself is saved, matching recordPayment's ordering: a failure here throws and rolls
+        // the whole creation back, so the outcome is "nothing happened", not a debt with no
+        // matching outflow.
+        if (recordDisbursement) {
+            ledger.post(
+                    userId, SourceType.DEBT_DISBURSEMENT, debt.getId(),
+                    request.accountId(), request.categoryId(), request.principal(), request.startDate(),
+                    "Lent to " + (debt.getCounterparty() == null ? debt.getName() : debt.getCounterparty()));
+        }
+
+        debts.save(debt);
 
         return toResponse(debt, 0);
+    }
+
+    /**
+     * @return true if this creation should also post a disbursement transaction
+     */
+    private static boolean validateDisbursement(DebtRequest request) {
+        boolean hasAccount = request.accountId() != null;
+        boolean hasCategory = request.categoryId() != null;
+        if (hasAccount != hasCategory) {
+            throw new BadRequestException(
+                    "Choose both an account and a category to record that you already gave them this "
+                            + "money, or leave both blank.");
+        }
+        if (hasAccount && request.direction() == Debt.Direction.OWED_BY_ME) {
+            throw new BadRequestException(
+                    "That only applies when someone owes you — borrowing doesn't move any money yet.");
+        }
+        return hasAccount;
     }
 
     /**

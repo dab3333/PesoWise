@@ -77,6 +77,13 @@ export interface DebtInput {
   /** Only sent on create — fixed once the debt exists. */
   startDate: string
   dueDate: string | null
+  /**
+   * Only meaningful for OWED_TO_ME, and only on create: which wallet the money actually left
+   * when it was lent out. Optional — some debts predate the app, or were never cash to begin
+   * with. Must be paired with categoryId or left out entirely.
+   */
+  accountId: string | null
+  categoryId: string | null
 }
 
 /** What one interest-accrual pass did, across every interest-bearing debt. */

@@ -4,7 +4,7 @@ import { isAdmin, useAuth } from '@/auth/AuthContext'
 import { PageHeader } from '@/components/PageHeader'
 import { ConfirmDialog, Modal } from '@/components/Modal'
 import { DateField, MoneyInput, Select } from '@/components/form'
-import { Alert, Button, Card, CardTitle, EmptyState, Field, QueryError } from '@/components/ui'
+import { Alert, Button, Card, CardTitle, EmptyState, Field, InfoTooltip, QueryError, Toggle } from '@/components/ui'
 import { useAccounts, useCategories } from '@/api/useLedger'
 import {
   DIRECTION_LABELS,
@@ -272,6 +272,8 @@ function DebtRow({
 
 function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void }) {
   const save = useSaveDebt()
+  const accounts = useAccounts()
+  const categories = useCategories()
   const [form, setForm] = useState<DebtInput>(() => ({
     name: debt?.name ?? '',
     direction: debt?.direction ?? 'OWED_BY_ME',
@@ -283,14 +285,29 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
     interestMethod: debt?.interestMethod ?? null,
     startDate: debt?.startDate ?? toDateKey(new Date()),
     dueDate: debt?.dueDate ?? '',
+    accountId: null,
+    categoryId: null,
   }))
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+
+  // Lending someone money is a real cash outflow, unlike borrowing — nothing moves until a
+  // payment is made there. Only offered on create, and only for that direction: a debt already
+  // has its disbursement (or doesn't) by the time it can be edited.
+  const [recordDisbursement, setRecordDisbursement] = useState(false)
+  const canRecordDisbursement = debt === null && form.direction === 'OWED_TO_ME'
+  const expenseCategories = (categories.data ?? []).filter((category) => category.kind === 'EXPENSE')
+  const preferredCategory =
+    expenseCategories.find((category) => category.name === 'Money Lent') ?? expenseCategories[0]
+  const chosenAccount = form.accountId || accounts.data?.[0]?.id || ''
+  const chosenCategory = form.categoryId || preferredCategory?.id || ''
 
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
     setFieldErrors({})
+
+    const disburse = canRecordDisbursement && recordDisbursement
 
     save.mutate(
       {
@@ -300,6 +317,8 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
           // Empty strings would fail server-side validation for these optional fields.
           interestRate: form.interestRate ? form.interestRate : null,
           dueDate: form.dueDate ? form.dueDate : null,
+          accountId: disburse ? chosenAccount : null,
+          categoryId: disburse ? chosenCategory : null,
         },
       },
       {
@@ -370,6 +389,50 @@ function DebtDialog({ debt, onClose }: { debt: Debt | null; onClose: () => void 
             The amount is fixed at {formatPeso(debt.principal)} — record payments to reduce the
             balance.
           </p>
+        )}
+
+        {canRecordDisbursement && (
+          <div className="rounded-lg border border-line p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-sm text-ink">
+                Record this debt as a transaction
+                <InfoTooltip text="Lending money is a real cash outflow — this records it as an expense now, the same way a payment records money coming back later." />
+              </span>
+              <Toggle
+                checked={recordDisbursement}
+                onChange={setRecordDisbursement}
+                label="Record this debt as a transaction"
+              />
+            </div>
+            {recordDisbursement && (
+              <div className="mt-3 flex flex-col gap-3">
+                <Select
+                  label="Paid from"
+                  value={chosenAccount}
+                  onChange={(event) => setForm({ ...form, accountId: event.target.value })}
+                  error={fieldErrors.accountId}
+                >
+                  {(accounts.data ?? []).map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </Select>
+                <Select
+                  label="Record it under"
+                  value={chosenCategory}
+                  onChange={(event) => setForm({ ...form, categoryId: event.target.value })}
+                  error={fieldErrors.categoryId}
+                >
+                  {expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
         )}
 
         <Field
