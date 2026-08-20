@@ -924,3 +924,131 @@ became Phases 9–13 above.
 | A shared `common` Maven module | Reconsidered and declined at five services (v1.2 Phase 3); unchanged by this release |
 | Multi-currency, shared/household budgets | Real scope, no signal either is needed |
 | CSV or bank-statement import (parsing) | Large surface area, no bank API access — distinct from this app's own JSON export/import |
+
+---
+
+# v1.4.0 — AI Budget Assistant (Planned, not started)
+
+A chat feature that answers two kinds of questions: how the app works ("what's 70-20-10?", "how
+do I record a debt payment?") and questions about the user's own money ("why is my Wants bucket
+over budget this month?", "how much do I still owe on the car loan?"). Considered and decided
+before this plan was written — see Blockers & Decisions for the full reasoning — as a **hosted
+free-tier LLM API (Google Gemini)**, not a self-hosted local model: the local-only, no-domain
+posture from v1.2.1/v1.3.0 is about nothing being reachable *from* the internet, not about the
+host machine having no internet access, and Gemini's free tier is strong enough to reason
+correctly over real ₱ figures where a small local model was judged too likely to get the
+arithmetic wrong. The privacy cost of an external call is real and is answered with minimization
+(aggregates only, never raw transaction notes) and an explicit opt-in, not by pretending the
+trade-off doesn't exist.
+
+## Checklist
+
+- [ ] Phase 14 — AI Budget Assistant (context aggregation, Gemini client, chat endpoint, rate
+      limiting, Settings opt-in, chat UI)
+
+## Plan
+
+### Phase 14. AI Budget Assistant 📋 Planned
+
+**Where it lives.** `planning-service` — it already Feign-calls ledger-service for the dual-write
+path and already owns budgets, debts, and goals, so it is the one service that can build a full
+financial picture without a new cross-service aggregator. A new `GeminiClient` (a plain
+`RestClient`/`WebClient` call, not Feign — this is an external host, not a Compose-network peer)
+lives alongside the existing `LedgerWriter` in the `ledger` package's sibling, wrapping the one
+outbound HTTPS call the whole feature makes.
+
+**Context aggregation — the privacy-minimization step.** A new `AssistantContextBuilder` composes
+only what already exists as aggregates, deliberately excluding line-item detail:
+
+- This month's income/expense/net (`ReportClient`'s existing summary call).
+- Budget progress per category and per 70-20-10 bucket — limits and actuals, not individual
+  transactions.
+- Debt overview — `totalOwedByMe`/`totalOwedToMe`/`netPosition`, and per-debt name, balance, and
+  due date, but never `counterparty` free text or payment notes.
+- Goal overview — target, saved amount, `monthlyNeeded`.
+
+**Never included, on principle, not just because it isn't needed yet:** raw transaction notes,
+debt counterparty names, account names beyond a generic type, and anything from another user —
+the existing `findByIdAndUserId` scoping applies to every query this feature touches, same as
+everywhere else in the app.
+
+**Static app knowledge.** A short, hand-written system-prompt fragment (not a RAG pipeline over
+`docs/*.md` — the doc set is small and the questions are predictable) covering what 70-20-10
+means, what a bucket is, and the shape of debts/goals/recurring bills, so "how do I..." questions
+don't need real user data to answer correctly.
+
+**Endpoint.** `POST /api/assistant/chat` — `{message, history?}` → `{reply}`. No persisted
+conversation table: history round-trips through the request/response the same way a normal chat
+widget would, and nothing here needs to survive a page reload. Returns the same one-shape error
+`{timestamp, status, message, fieldErrors}` as every other endpoint; a Gemini failure or timeout
+surfaces as a 503 with a friendly "The assistant is temporarily unavailable" message, reusing the
+same downstream-unreachable pattern already built for the gateway
+(`GatewayErrorAttributes`/`QueryError`) rather than inventing a second one.
+
+**Rate limiting.** The `bucket4j` filter added in Phase 8 targets only the auth public paths; this
+endpoint gets its own, much tighter limit (e.g. 20/hour), because unlike a brute-force guard this
+one is protecting a metered external quota, not just the app itself — a runaway frontend retry
+loop should not be able to burn through Gemini's free-tier ceiling in a few minutes.
+
+**Configuration.** `pesowise.ai.enabled` + `pesowise.ai.api-key` in planning-service's
+`application.yml`/`.env`. If no key is configured, the endpoint and the frontend entry point are
+both absent rather than present-and-broken — a self-hoster who never sets up Gemini sees no half
+built feature.
+
+**Opt-in.** A new "AI Assistant" toggle in Settings, **off by default**, with the exact fields
+that get sent spelled out next to it ("category names and monthly totals — never transaction
+notes, counterparty names, or account numbers"), not a generic "may use third-party AI"
+disclaimer. The toggle is enforced client-side only — the same trust level as the existing
+appearance/theme setting — since this is a single-user personal app and the person the data
+belongs to is the one flipping the switch; there is no second user to protect it from.
+
+**Frontend.** A floating chat button (bottom-right, above the mobile bottom nav) opening a
+slide-over panel — chosen over a dedicated page because the assistant is meant to be asked a
+question from wherever the user already is, the same reasoning behind Phase 11's notification
+bell being a panel rather than a page. Message list, input box, a loading state, and the 503
+friendly-degradation message rendered the same way `QueryError` already renders one elsewhere.
+No streaming in this pass — plain request/response first; streaming is a possible later
+enhancement, not required to ship something useful.
+
+**Verification**, against the running stack, not by reading the code: enable the toggle, ask an
+app-knowledge question ("what does 70-20-10 mean?") and confirm a correct answer with no user data
+in the request; ask a real-data question ("why is my Wants bucket over budget?") against a
+populated test account and confirm the numbers in the reply match the Dashboard; inspect the
+actual outbound request (via a local proxy or request logging) to confirm no transaction note or
+counterparty ever leaves the service; stop internet access (or point the Gemini base URL at
+nothing) and confirm the 503 friendly message appears instead of a raw error; hammer the endpoint
+past the rate limit and confirm 429 in the app's error shape; confirm the toggle being off means
+the chat button never renders at all, not just that it's disabled.
+
+## Blockers & Decisions
+
+**Hosted API vs. self-hosted local model — decided in favor of hosted (Gemini):**
+
+| | Hosted free-tier API (chosen) | Self-hosted local model (Ollama) |
+| --- | --- | --- |
+| Cost | Free tier, generous enough for one user | Free, but a real RAM/disk addition to an already 10-container stack |
+| Requires internet | Yes — outbound only, no deployment/domain needed | No — fully offline |
+| Answer quality on real ₱ figures | Good — frontier-adjacent models | Materially weaker on CPU-only hardware; higher risk of subtly wrong arithmetic in a finance app |
+| Privacy | Aggregated financial data leaves the machine per question | Nothing leaves the machine |
+
+Requiring internet access does **not** mean this feature needs the deployment this project
+walked away from in v1.2.1 — "local-only, no domain" is about nothing being reachable *from* the
+internet; an outbound call from a Compose service is the same category of traffic as `docker
+compose pull`. Chosen over Ollama specifically because a personal-finance chatbot getting the
+math wrong is a worse failure mode than an honest, disclosed, opt-in external call — and because
+the person whose data it is is the one consenting, which is a materially different situation from
+a multi-tenant product sending someone else's data to a third party without asking.
+
+**Gemini over Groq:** both have workable free tiers; Gemini's documented data-handling terms for
+its free API were judged more defensible to vouch for to a user than Groq's, which mattered more
+here than Groq's faster inference.
+
+**Deliberately out of scope for this version:**
+
+| Deferred | Why |
+| --- | --- |
+| Function-calling / the assistant taking actions (adding a transaction, creating a debt) | Read-only Q&A has high confidence; a chatbot mutating financial data needs its own guardrail design and confirmation flow — a separate feature, not a checkbox on this one |
+| Streaming responses | Adds real complexity for a nice-to-have; plain request/response ships the same value |
+| A persisted conversation history | Nothing today needs a chat to survive a reload; revisit only if that changes |
+| Ollama / local-model fallback for offline use | Would answer the internet-requirement objection directly, but only worth the hardware/RAM cost if hosted-API quality turns out to be a real problem in practice, not preemptively |
+| RAG over `docs/*.md` | The doc set and question set are both small enough that a hand-written system-prompt fragment covers it; a retrieval pipeline would be solving a scale problem this app doesn't have |
