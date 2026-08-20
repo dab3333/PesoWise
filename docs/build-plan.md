@@ -6,26 +6,30 @@ next — so the app is runnable and demonstrable at every step rather than only 
 Each step is a feature branch merged to `main` once its slice runs end to end, so `main` stays
 deployable and the history reads as the build order.
 
-## Progress
-
-### v1.0 — the MVP
-
-| # | Step | Status |
-| --- | --- | --- |
-| 1 | Scaffolding, Compose, gateway | ✅ Done |
-| 2 | auth-service + gateway JWT filter + login/register | ✅ Done |
-| 3 | ledger-service accounts & categories + Settings page | ✅ Done |
-| 4 | ledger-service transactions + Transactions page | ✅ Done |
-| 5 | Report endpoints + Dashboard page | ✅ Done |
-| 6 | planning-service budgets + 70-20-10 suggester | ✅ Done |
-| 7 | planning-service debts | ✅ Done |
-| 8 | planning-service savings goals | ✅ Done |
-| 9 | planning-service recurring bills + scheduler | ✅ Done |
-| 10 | Test matrix + README | ✅ Done |
+Every version below follows the same shape: **Checklist** (what shipped, at a glance) → **Plan**
+(how it was built, phase by phase, with verification and test counts) → **Blockers & Decisions**
+(what was decided, why, and what was left open).
 
 ---
 
-## 1. Scaffolding ✅
+# v1.0 — The MVP
+
+## Checklist
+
+- [x] Scaffolding, Compose, gateway
+- [x] auth-service + gateway JWT filter + login/register
+- [x] ledger-service accounts & categories + Settings page
+- [x] ledger-service transactions + Transactions page
+- [x] Report endpoints + Dashboard page
+- [x] planning-service budgets + 70-20-10 suggester
+- [x] planning-service debts
+- [x] planning-service savings goals
+- [x] planning-service recurring bills + scheduler
+- [x] Test matrix + README
+
+## Plan
+
+### 1. Scaffolding ✅
 
 Monorepo skeleton, `.gitignore`, `.env.example`, `.gitattributes`, three Postgres containers, and
 the gateway. **`.env` gitignored from the very first commit** — `JWT_SECRET` and database
@@ -33,7 +37,7 @@ passwords must never reach a public repo.
 
 *Verified:* all containers healthy; `/api/transactions` returns 401 without a token.
 
-## 2. auth-service + gateway filter + login/register ✅
+### 2. auth-service + gateway filter + login/register ✅
 
 The first vertical slice, chosen deliberately: it proves the whole request path — browser →
 nginx → gateway → service → Postgres — before any feature depends on it.
@@ -44,7 +48,7 @@ route without a token 401; **spoofed `X-User-Id` 401, not 200**; Flyway history 
 
 *Tests:* gateway 9/9, auth-service 8/8.
 
-## 3–5. ledger-service ✅
+### 3–5. ledger-service ✅
 
 Built as one service, exposed as three UI steps.
 
@@ -65,7 +69,7 @@ edge cases including leap February, and malformed input.
 progress), Transactions (paged, filtered, full CRUD), and Settings (accounts, categories,
 appearance). Recharts is code-split, so the initial bundle is 318 kB rather than 685 kB.
 
-## 6. Budgets ✅
+### 6. Budgets ✅
 
 The `budgets` table, the Feign-backed progress calculation, the 70-20-10 suggester, and the Budgets
 page. This is the first step where two services talk to each other.
@@ -97,7 +101,7 @@ income estimated from last month when omitted; copy-previous-month; zero limit 4
 *Tests:* planning-service 26/26 — the suggester's proportional split, even-split fallback, rounding
 drift, history window, income estimation, and the progress maths including overspend.
 
-## 7. Debts ✅
+### 7. Debts ✅
 
 Both directions (owed by me, owed to me), with payments, undo, settle, and the Debts page.
 
@@ -106,20 +110,6 @@ transaction to ledger-service, so a debt payment appears in spending reports rat
 silo. The ordering, the failure modes, and the one window that stays open are documented in
 [architecture.md](architecture.md#the-dual-write) — the short version is that the ledger is called
 before the local commit, so a failure means "nothing happened".
-
-Decisions worth recording:
-
-- **Undo deletes the ledger transaction too.** Reversing a payment while leaving the cash movement
-  behind would make the two records disagree, which is worse than either outcome alone.
-- **Deleting a debt keeps its transactions.** The money really did move; erasing it would rewrite
-  the user's spending history.
-- **`accountId` and `categoryId` are required, not inferred.** Which wallet the money came from and
-  how it should appear in reports are the user's decisions. The category also carries the direction,
-  so paying records an expense and being repaid records income — they cannot disagree.
-- **Overpayment is rejected, not clamped** — it usually means a typo, and absorbing it hides the
-  mistake.
-- **Principal and direction are immutable** once created; both would invalidate existing payments.
-- Interest rate is stored and displayed but **not accrued** — compounding is out of scope.
 
 *Verified against real Postgres across both services:* both directions created; net position;
 payment dropping the balance to ₱7,500 **and** August ledger expense rising 29,500 → 32,000 with the
@@ -132,7 +122,7 @@ totals; paying a settled debt 409.
 propagation, undo reversing both sides and reopening a settled debt, overpayment, cross-debt payment
 isolation, user scoping, and the overdue rule.
 
-## 8. Savings goals ✅
+### 8. Savings goals ✅
 
 Goals with contributions, undo, archiving, and the Goals page.
 
@@ -141,19 +131,6 @@ class, it was extracted into `LedgerWriter` and both `DebtService` and `GoalServ
 rule is subtle enough — call the ledger *before* the local commit so a failure means "nothing
 happened" — that having it stated in one place matters more than the handful of lines saved.
 `DebtServiceTest` was updated for the refactor and stayed green, which is the point of having had it.
-
-Where goals deliberately differ from debts:
-
-- **No stored total.** `savedAmount` is `SUM(contributions)`, read in one grouped query. A debt keeps
-  a balance column because it has an invariant to protect — you cannot pay more than you owe — and a
-  CHECK constraint enforcing it. A goal has no such bound, so a stored total would be duplication
-  with nothing to guard. "Achieved" is likewise computed, not a column.
-- **Over-saving is allowed.** Contributing past the target returns 201, where overpaying a debt
-  returns 400. Saving more than planned is not a mistake to prevent. `remaining` clamps at zero
-  rather than going negative, because "₱0 to go" is the useful reading.
-- **The target amount is editable**, unlike a debt's principal. Revising what you are saving for is
-  normal and invalidates nothing; contributions stay exactly as recorded.
-- **Archiving exists** as the alternative to deleting — it hides a goal but keeps its history.
 
 `monthlyNeeded` is the feature that turns a goal into a plan: the shortfall spread over the remaining
 calendar months, counted **inclusive of the current one** so a target inside this month asks for the
@@ -172,7 +149,7 @@ all four `monthlyNeeded` cases including round-up and the current-month edge, be
 applying to unmet goals, the dual write's captured payload, ledger-failure propagation, undo, and
 archived goals leaving the totals.
 
-## 9. Recurring bills ✅
+### 9. Recurring bills ✅
 
 A bill is a transaction template plus a cursor (`nextRunDate`); a daily `@Scheduled` pass walks it
 forward. The Recurring page, an upcoming-bills widget on the Dashboard, and manual confirm/skip for
@@ -222,7 +199,7 @@ month-end anchor holding on a real bill.
 February and the 31st, both idempotency guards individually, the catch-up cap, one-bill-failure
 isolation, monthly normalisation, and the repository-declaration regression guard.
 
-## 10. Test matrix and README ✅
+### 10. Test matrix and README ✅
 
 MVP feature work finished at step 9. This step closes the gap the earlier plan flagged
 explicitly: **an actual per-service test proving user A cannot read or mutate user B's rows**,
@@ -250,15 +227,6 @@ information a caller should not get. `Debt` and `Goal` already had this; the aud
 the other five entities now do too, rather than assuming the pattern held everywhere because it
 held somewhere.
 
-**Testcontainers integration tests were not added.** They cannot run on this machine — see
-[development.md](development.md#testcontainers-cannot-reach-docker-on-some-machines) — so every
-guarantee that would normally come from an integration suite (Flyway applying cleanly, the
-aggregate SQL, cross-user isolation) was instead verified by exercising the real endpoints against
-the running Compose stack, over all nine steps. That is weaker than a suite that runs in CI on
-every push, and is recorded here as a known gap rather than papered over.
-
-### Final count
-
 **138 tests**, all passing, run immediately before this commit:
 
 | Service | Tests | Covers |
@@ -268,7 +236,7 @@ every push, and is recorded here as a known gap rather than papered over.
 | ledger-service | 20 | 70-20-10 bucket maths, zero-income division, leap February, malformed input, **5 new cross-user isolation tests** |
 | planning-service | 101 | budget progress and upsert; the suggester's proportional split, rounding, history window; both debt-payment dual-write guards; goal derivation and over-saving; recurring cursor advancement (13 cases including the 31st, leap years, year boundaries); both idempotency guards; the repository-declaration regression guard; **cross-user isolation across every entity** |
 
-### Verification checklist
+### Final verification checklist
 
 Performed end to end against the deployed stack at every step, not only at the end:
 
@@ -289,6 +257,62 @@ Performed end to end against the deployed stack at every step, not only at the e
 10. `curl` without a token → 401 at the gateway; a spoofed `X-User-Id` header → 401, not 200.
 11. `mvn test` green in all four services — 138/138.
 
+## Blockers & Decisions
+
+**Debts (Step 7):**
+
+- **Undo deletes the ledger transaction too.** Reversing a payment while leaving the cash movement
+  behind would make the two records disagree, which is worse than either outcome alone.
+- **Deleting a debt keeps its transactions.** The money really did move; erasing it would rewrite
+  the user's spending history.
+- **`accountId` and `categoryId` are required, not inferred.** Which wallet the money came from and
+  how it should appear in reports are the user's decisions. The category also carries the direction,
+  so paying records an expense and being repaid records income — they cannot disagree.
+- **Overpayment is rejected, not clamped** — it usually means a typo, and absorbing it hides the
+  mistake.
+- **Principal and direction are immutable** once created; both would invalidate existing payments.
+- Interest rate is stored and displayed but **not accrued** — compounding is out of scope for v1.0
+  (delivered in v1.2 Phase 2).
+
+**Savings goals (Step 8) — deliberately different from debts:**
+
+- **No stored total.** `savedAmount` is `SUM(contributions)`, read in one grouped query. A debt keeps
+  a balance column because it has an invariant to protect — you cannot pay more than you owe — and a
+  CHECK constraint enforcing it. A goal has no such bound, so a stored total would be duplication
+  with nothing to guard. "Achieved" is likewise computed, not a column.
+- **Over-saving is allowed.** Contributing past the target returns 201, where overpaying a debt
+  returns 400. Saving more than planned is not a mistake to prevent. `remaining` clamps at zero
+  rather than going negative, because "₱0 to go" is the useful reading.
+- **The target amount is editable**, unlike a debt's principal. Revising what you are saving for is
+  normal and invalidates nothing; contributions stay exactly as recorded.
+- **Archiving exists** as the alternative to deleting — it hides a goal but keeps its history.
+
+**Known gap, accepted rather than fixed:** Testcontainers integration tests were not added for
+v1.0. They cannot run on this machine — see
+[development.md](development.md#testcontainers-cannot-reach-docker-on-some-machines) — so every
+guarantee that would normally come from an integration suite (Flyway applying cleanly, the
+aggregate SQL, cross-user isolation) was instead verified by exercising the real endpoints against
+the running Compose stack, over all nine steps. That is weaker than a suite that runs in CI on
+every push, and is recorded here as a known limitation rather than papered over.
+
+---
+
+# v1.1 — Mobile Optimisation
+
+## Checklist
+
+- [x] Screenshot-driven fixes, two rounds
+
+## Plan
+
+Every fix, with its root cause, is documented in [changelog.md](changelog.md) rather than
+duplicated here — that file is organized by root cause, not by commit, since several fixes were
+corrected more than once as real-device/DevTools testing surfaced deeper issues.
+
+## Blockers & Decisions
+
+None recorded separately from the fixes themselves — see changelog.md.
+
 ---
 
 # v1.2 — Admin, Auth Hardening, Interest, Deployment
@@ -299,88 +323,18 @@ needs a role concept that did not exist anywhere), the one MVP feature left deli
 half-built (debt interest), the authentication gaps that make a public deployment irresponsible,
 and a real deployment path.
 
-## Decisions taken up front
+## Checklist
 
-| Decision | Choice | Why not the alternative |
-| --- | --- | --- |
-| Admin backend | A 5th service, `admin-service`, owning feedback and audit, composing cross-user stats over Feign | Endpoints bolted onto the three existing services would be cheaper, but scatter admin logic and leave feedback with no owner |
-| Debt interest | Stored accrual with a scheduled monthly job | A read-time projection cannot split a payment between interest and principal, because the accrued figure is never materialised at payment time |
-| Deployment | One free VM running the existing Compose stack behind Caddy | A Vercel + PaaS split loses the same-origin nginx proxy and wakes several chained JVMs on every cold request |
-| About + feedback | A dedicated `/about` page, linked from Settings | Settings is for configuration; this is informational, and `SettingsPage.tsx` is already 514 lines |
+- [x] Phase 1 — Roles, email verification, password reset
+- [x] Phase 2 — Debt interest accrual
+- [x] Phase 3 — admin-service (5th service)
+- [x] Phase 4 — Admin UI, About page, feedback
+- [x] Phase 5 — Landing and auth page
+- [x] Phase 6 — Deployment readiness
 
-Adding a fifth service deliberately triggers the "revisit at five" note in
-[architecture.md](architecture.md) about a shared `common` module. Resolved in Phase 3: still no
-shared module.
+## Plan
 
----
-
-# v1.1 — mobile optimisation
-
-Screenshot-driven fixes across two rounds. See [changelog.md](changelog.md) for the full list
-with root causes.
-
----
-
-# v1.2 — admin, auth hardening, interest, deployment
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 1 | Roles, email verification, password reset | ✅ Done |
-| 2 | Debt interest accrual | ✅ Done |
-| 3 | admin-service (5th service) | ✅ Done |
-| 4 | Admin UI, About page, feedback | ✅ Done |
-| 5 | Landing and auth page | ✅ Done |
-| 6 | Deployment readiness | ✅ Done |
-
----
-
-# v1.2.1 — data export/import
-
-Deployment (Phase 6) hit real blockers outside the app's control — see Phase 7 below. Rather than
-keep chasing a shared server, the developer pivoted to a feature: export everything to one file,
-import it back into any install. Shipped as a patch on top of v1.2 since it is one self-contained
-feature, not a phase with its own sub-steps.
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 7 | Data export/import | ✅ Done |
-
----
-
-# v1.3.0 — deferred-feature audit + selected features (Planned, not started)
-
-v1.2.1 settled the app into a **local-only, per-device** reality — no domain, no public server,
-each install moved between devices via export/import rather than a live sync. This round
-re-audited every previously-deferred feature against that reality (some were deferred *because*
-they needed hosting and are still blocked; others were deferred for unrelated reasons and are
-just as buildable on localhost). A Gmail/email-receipt auto-import idea was also considered this
-round and explicitly declined — see Phase 8's writeup for why. Full design in Phase 8–13 below.
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 8 | Foundations: rate limiting + Playwright scaffold | 📋 Planned |
-| 9 | Transfers between accounts | 📋 Planned |
-| 10 | Full amortisation schedule calculator | 📋 Planned |
-| 11 | Due-bill / budget-overrun notification center | 📋 Planned |
-| 12 | User-facing PDF monthly report | 📋 Planned |
-| 13 | Receipt/photo attachments (MinIO) | 📋 Planned |
-
----
-
-## Known blockers
-
----
-| # | Blocker | Blocks | Mitigation |
-| --- | --- | --- | --- |
-| 1 | No SMTP provider account | Real delivery in Phase 1 | `MAIL_ENABLED=false` logs links and self-verifies registrations, so every flow is buildable and testable without credentials |
-| 2 | Which contact details to publish | Phase 4 | Decide deliberately — a public address invites scraping; the feedback form is an alternative |
-| 3 | No domain name | HTTPS in Phase 6 | Let's Encrypt will not issue for a bare IP. A DuckDNS subdomain, or a cheap `.com` |
-| 4 | Oracle Cloud ARM capacity | Phase 6 | Free ARM instances are often unavailable in popular regions; all base images have arm64 variants, so ARM itself is not the risk |
-
-Also accepted: the stack grows from 8 containers to 10, and the frontend still has no test
-framework — verification stays Playwright-against-the-live-stack, as in v1.1.
-
-## Phase 1. Roles, email verification, password reset ✅
+### Phase 1. Roles, email verification, password reset ✅
 
 The foundation everything else depends on: no admin panel is possible without a role.
 
@@ -422,10 +376,8 @@ signed-in account could call it. Now admin-only.
 the order of deploying and signing up does not matter. Promotion only — an address disappearing
 from an environment variable must not silently strip someone's access.
 
-### Two failures worth recording
-
-Both were caught by running the stack, not by reading the code, and neither would have surfaced
-in a unit test:
+Two failures worth recording, both caught by running the stack, not by reading the code, and
+neither would have surfaced in a unit test:
 
 1. **`CHAR(64)` broke startup.** Postgres reports `CHAR` as `bpchar`, Hibernate maps a String to
    `varchar`, and `ddl-auto: validate` refused to start. Corrected forward in
@@ -452,7 +404,7 @@ until Phase 3. The rule is covered by unit tests now and gets its live check the
 
 *Tests:* auth-service 26, gateway 17, planning-service 101 — all green.
 
-## Phase 2. Debt interest ✅
+### Phase 2. Debt interest ✅
 
 Built last, after being deliberately deferred through Phases 3–5 — independent of every other
 phase, so nothing else needed to wait for it.
@@ -509,7 +461,7 @@ isolation, mirroring `RecurringServiceTest`), and `DebtServiceTest` grew from 15
 splitting, the new overpayment boundary, settling only when both columns are zero, reversal
 restoring both). All 207 tests across the five services stayed green throughout.
 
-## Phase 3. admin-service ✅
+### Phase 3. admin-service ✅
 
 A fifth Maven module at `services/admin-service` (:8084) with its own database, owning `feedback`
 and `admin_audit`. Phase 2 (debt interest) was deliberately skipped to reach this phase directly —
@@ -533,9 +485,7 @@ a generic report framework, since nothing has asked for a second one yet. The
 `/api/admin/overview` fan-out degrades per panel when a service is down rather than failing the
 whole request.
 
-### Two failures worth recording
-
-Both were caught by running the stack, not by reading the code:
+Two failures worth recording, both caught by running the stack, not by reading the code:
 
 1. **A null search parameter crashed the user list with `function lower(bytea) does not exist`.**
    `WHERE :q IS NULL OR LOWER(u.email) LIKE ...` — when `:q` is null and feeds straight into
@@ -564,7 +514,7 @@ admin-gated prefix as intended.
 mutation, and the fan-out degradation logic under all four combinations of dependency health),
 plus the existing 164 unaffected. **179 total, all green.**
 
-## Phase 4. Admin UI, About page, feedback ✅
+### Phase 4. Admin UI, About page, feedback ✅
 
 Prerequisites: a **`TextArea`** in `ui.tsx` (there is no `<textarea>` anywhere in the codebase),
 and extracting `Th`/`IconButton`/`StatTile` out of the pages they are currently trapped in.
@@ -588,7 +538,7 @@ not tax the bundle any account without the ADMIN role ever pays for.
 [design-system.md](design-system.md) applies unchanged: no gradients, jade as the only accent.
 The admin panel must not become a second visual language.
 
-### Three things found only by using the deployed app, not by reading the code
+Three things found only by using the deployed app, not by reading the code:
 
 1. **A same-origin `localStorage` collision, unrelated to admin but surfaced while testing it.**
    Two accounts signed in in separate tabs of the same browser stomped on each other's session —
@@ -612,7 +562,7 @@ The admin panel must not become a second visual language.
    `items-center` to `items-start` so the category dot, amount and action icons stay aligned to
    the top line instead of drifting toward the middle of a now-taller card.
 
-## Phase 5. Landing and auth page ✅
+### Phase 5. Landing and auth page ✅
 
 `/login` and `/register` stay separate routes sharing one component. A two-column layout at `md`
 and up: a flat jade brand panel with the tagline **"Make Every Peso Count."** and three one-line
@@ -626,9 +576,8 @@ A separate public marketing page is deferred — `/` is the authenticated dashbo
 visitors already redirect, so a hero here delivers most of the value for none of the routing
 change.
 
-### Scope grew mid-phase: auth hardening and profile fields for future personalization
-
-Requested alongside the redesign, landing in the same phase since they touch the same page:
+Scope grew mid-phase — auth hardening and profile fields for future personalization, requested
+alongside the redesign and landing in the same phase since they touch the same page:
 
 - **Show/hide password.** Neither `/login` nor `/register` had one. New `PasswordField` in
   `ui.tsx` — a `Field` with its own local visibility toggle, so no caller has to thread that
@@ -654,7 +603,7 @@ migrated as `SMALLINT`, but the entity's `Integer` field maps to Hibernate's def
 and `ddl-auto: validate` rejected the mismatch outright at startup. Fixed with a follow-up
 migration (`V5`) rather than editing `V4`, since Flyway had already recorded and applied it.
 
-## Phase 6. Deployment readiness ✅
+### Phase 6. Deployment readiness ✅
 
 `docker-compose.prod.yml` as an override, layered on with
 `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`: it resets the
@@ -699,47 +648,67 @@ instantly, with no dual-secret grace period — worth calling out explicitly rat
 discovering it during an actual rotation).
 
 **Not done, and deliberately so:** no VM was actually provisioned or DNS configured in this
-phase — that requires the domain and Oracle Cloud account described as open blockers, which are
-the reader's to resolve, not something to fabricate here. What's shippable now is everything the
-repo can prove without those: the override merges cleanly, the invariant holds in the generated
-config, and CI is wired up to actually run on the next push.
+phase — that requires the domain and Oracle Cloud account described as open blockers below, which
+are the reader's to resolve, not something to fabricate here. What's shippable now is everything
+the repo can prove without those: the override merges cleanly, the invariant holds in the
+generated config, and CI is wired up to actually run on the next push.
 
-## Phase 7. Data export/import ✅ (v1.2.1)
+## Blockers & Decisions
 
-Phase 6 shipped the deployment *mechanics*, but actually standing up a shared server hit walls
-outside the repo's control: Oracle Cloud's card verification flow rejected a virtual card (with a
-real ₱66.44 deducted anyway), Google Cloud carried the same card-verification risk, and
-self-hosting from the developer's own PC via Tailscale Funnel got as far as a public URL
-(`https://….ts.net`) before Tailscale's own certificate-issuance backend turned out to have a
-genuine ongoing outage, confirmed via their public status page rather than assumed. Rather than
-keep retrying infrastructure outside the app's control, the developer chose a different shape of
-solution entirely: **each device keeps its own local install**, and moving data between them is a
-deliberate export/import action in the app, not a live sync.
+**Decisions taken up front:**
+
+| Decision | Choice | Why not the alternative |
+| --- | --- | --- |
+| Admin backend | A 5th service, `admin-service`, owning feedback and audit, composing cross-user stats over Feign | Endpoints bolted onto the three existing services would be cheaper, but scatter admin logic and leave feedback with no owner |
+| Debt interest | Stored accrual with a scheduled monthly job | A read-time projection cannot split a payment between interest and principal, because the accrued figure is never materialised at payment time |
+| Deployment | One free VM running the existing Compose stack behind Caddy | A Vercel + PaaS split loses the same-origin nginx proxy and wakes several chained JVMs on every cold request |
+| About + feedback | A dedicated `/about` page, linked from Settings | Settings is for configuration; this is informational, and `SettingsPage.tsx` is already 514 lines |
+
+Adding a fifth service deliberately triggers the "revisit at five" note in
+[architecture.md](architecture.md) about a shared `common` module. Resolved in Phase 3: still no
+shared module — see that phase's writeup above for why.
+
+**Known blockers at the start of this version:**
+
+| # | Blocker | Blocks | Mitigation |
+| --- | --- | --- | --- |
+| 1 | No SMTP provider account | Real delivery in Phase 1 | `MAIL_ENABLED=false` logs links and self-verifies registrations, so every flow is buildable and testable without credentials |
+| 2 | Which contact details to publish | Phase 4 | Decide deliberately — a public address invites scraping; the feedback form is an alternative |
+| 3 | No domain name | HTTPS in Phase 6 | Let's Encrypt will not issue for a bare IP. A DuckDNS subdomain, or a cheap `.com` |
+| 4 | Oracle Cloud ARM capacity | Phase 6 | Free ARM instances are often unavailable in popular regions; all base images have arm64 variants, so ARM itself is not the risk |
+
+**Also accepted:** the stack grows from 8 containers to 10, and the frontend still has no test
+framework — verification stays Playwright-against-the-live-stack, as in v1.1.
+
+---
+
+# v1.2.1 — Data Export/Import
+
+Deployment (v1.2 Phase 6) shipped the deployment *mechanics*, but actually standing up a shared
+server hit walls outside the repo's control — see Blockers & Decisions below. Rather than keep
+chasing a shared server, the developer pivoted to a feature: export everything to one file,
+import it back into any install. Shipped as a patch on top of v1.2 since it is one self-contained
+feature, not a phase with its own sub-steps.
+
+## Checklist
+
+- [x] Data export/import (ledger-service + planning-service + Settings page)
+
+## Plan
+
+### Phase 7. Data export/import ✅
 
 **Design.** One `GET .../export` / `POST .../import` endpoint pair per owning service
 (ledger-service, planning-service) rather than a new aggregator — nothing in the codebase does a
 cross-service transaction today, and the frontend already fetches from both services separately
 for other pages. Import always **replaces**, never merges (matches "move to a new device" and
-avoids duplicate-record accumulation), and — after a design change mid-build, below — always
-**generates fresh ids** rather than reusing the file's own. See `architecture.md`'s ledger-service
-and planning-service sections for the full id-remapping mechanics.
+avoids duplicate-record accumulation), and — after a design change mid-build, see Blockers &
+Decisions — always **generates fresh ids** rather than reusing the file's own. See
+`architecture.md`'s ledger-service and planning-service sections for the full id-remapping
+mechanics.
 
-**The design changed once, after building the first version.** The first pass preserved the
-file's original ids, on the reasoning that a full wipe-before-reinsert removes any collision risk
-— which is true for restoring your *own* backup, but breaks the moment two different accounts'
-data has to coexist anywhere in either database's history (unique indexes on account/category
-names, for instance, aren't scoped away by the wipe of a *different* user's row). Concretely:
-importing one account's export into a *different*, unrelated account correctly returned 409 on
-this first design — which is what the wipe-and-preserve-ids logic was supposed to do — but the
-developer's actual want, confirmed via `AskUserQuestion`, was "I want cross-account import to
-actually work," i.e. clone one account's data into another. That's a wider capability than restore
-alone, so the fix was structural: generate fresh ids on every import and return the old-id →
-new-id maps so the importing side can remap every cross-reference. This makes "restore my own
-backup" and "load someone else's export into a different account" the exact same code path, with
-no special-casing on whose file it is.
-
-**Two bugs, both found only by testing against the live Docker Compose stack — reading the code
-said both versions were correct:**
+Two bugs, both found only by testing against the live Docker Compose stack — reading the code
+said both versions were correct:
 
 1. **Hibernate flushes inserts before deletes, regardless of call order.** `deleteByUserId` is a
    Spring Data *derived* delete query — it loads matching entities and calls
@@ -777,27 +746,58 @@ against the button (fixed with an explicit `flex-col sm:flex-row` breakpoint ins
 `docs/data-migration.md` — the manual `pg_dump`/`psql` walkthrough this feature replaces — is
 removed; it was never more than a stopgap for a workflow the app now does itself.
 
-## Phase 8. Foundations: rate limiting + Playwright scaffold 📋 (v1.3.0, planned)
+## Blockers & Decisions
+
+**Why this version exists at all — deployment was blocked outside the app's control:**
+Oracle Cloud's card verification flow rejected a virtual card (with a real ₱66.44 deducted
+anyway), Google Cloud carried the same card-verification risk, and self-hosting from the
+developer's own PC via Tailscale Funnel got as far as a public URL (`https://….ts.net`) before
+Tailscale's own certificate-issuance backend turned out to have a genuine ongoing outage,
+confirmed via their public status page rather than assumed. The decision: **each device keeps
+its own local install**, and moving data between them is a deliberate export/import action in
+the app, not a live sync. This is the reality every later version (v1.3.0 onward) plans against.
+
+**Design decision reversed mid-build:** the first pass preserved the file's original ids, on the
+reasoning that a full wipe-before-reinsert removes any collision risk — which is true for
+restoring your *own* backup, but breaks the moment two different accounts' data has to coexist
+anywhere in either database's history (unique indexes on account/category names, for instance,
+aren't scoped away by the wipe of a *different* user's row). Concretely: importing one account's
+export into a *different*, unrelated account correctly returned 409 on this first design — which
+is what the wipe-and-preserve-ids logic was supposed to do — but the developer's actual want,
+confirmed via direct question, was "I want cross-account import to actually work," i.e. clone one
+account's data into another. That's a wider capability than restore alone, so the fix was
+structural: generate fresh ids on every import and return the old-id → new-id maps so the
+importing side can remap every cross-reference. This makes "restore my own backup" and "load
+someone else's export into a different account" the exact same code path, with no special-casing
+on whose file it is.
+
+---
+
+# v1.3.0 — Deferred-Feature Audit + Selected Features (Planned, not started)
+
+v1.2.1 settled the app into a **local-only, per-device** reality — no domain, no public server,
+each install moved between devices via export/import rather than a live sync. This round
+re-audited every previously-deferred feature against that reality (some were deferred *because*
+they needed hosting and are still blocked; others were deferred for unrelated reasons and are
+just as buildable on localhost). A Gmail/email-receipt auto-import idea was also considered this
+round and explicitly declined — see Blockers & Decisions below for why.
+
+## Checklist
+
+- [ ] Phase 8 — Foundations: rate limiting + Playwright scaffold
+- [ ] Phase 9 — Transfers between accounts
+- [ ] Phase 10 — Full amortisation schedule calculator
+- [ ] Phase 11 — Due-bill / budget-overrun notification center
+- [ ] Phase 12 — User-facing PDF monthly report
+- [ ] Phase 13 — Receipt/photo attachments (MinIO)
+
+## Plan
+
+### Phase 8. Foundations: rate limiting + Playwright scaffold 📋 Planned
 
 Two small, self-contained pieces, done first and together so every phase after this one can add
 its own real end-to-end test as part of its own verification, instead of testing being an
 afterthought — the exact "frontend has no test framework" blocker left open since v1.2.
-
-**Deferred-feature audit, done as part of scoping this phase.** Every item previously deferred to
-v1.3 (the old table this section's own "Explicitly deferred" table below now supersedes), plus
-everything in `requirements.md`'s "explicitly out of scope" table, was re-checked against the new
-local-only-per-device reality v1.2.1 settled into. Some were deferred *because* they needed a domain/hosting and are still blocked by that
-(Kubernetes manifests, a marketing landing page, Eureka/Spring Cloud Config); others were deferred
-for unrelated reasons and turned out to be just as buildable on localhost as anywhere else — those
-became Phases 9–13. **A Gmail/email-receipt auto-import idea was raised this round and explicitly
-declined**: reading email content needs Google's `gmail.readonly` scope, which Google classifies
-as *restricted* — an app in "Testing" publishing status gets refresh tokens that expire after 7
-days unless it completes Google's app-verification process, which in turn wants a live, hosted
-privacy-policy page. That circles back to needing the exact domain/hosting this project just
-walked away from in Phase 6/7, so it stays deferred (a lower-friction email-*forwarding*
-alternative, with no OAuth at all, was also discussed and not pursued this round). Refresh token
-rotation was reconsidered too and still not selected — a 24h JWT remains adequate for local-only
-personal use.
 
 **Rate limiting (gateway).** `bucket4j` in in-memory mode — no Redis, since the gateway is a
 single instance and this is anti-brute-force, not anti-DDoS, so resetting on a restart is
@@ -816,7 +816,7 @@ trip — the three flows this project's own history has manually re-verified the
 test:e2e`, and a CI job that brings the full stack up (`docker compose up -d --build`), waits for
 health, runs the suite, tears down.
 
-## Phase 9. Transfers between accounts 📋 (v1.3.0, planned)
+### Phase 9. Transfers between accounts 📋 Planned
 
 **Model**, validated against the real schema before committing to it (`V1__init.sql`,
 `Enums.java`, `AccountRepository.java`, `TransactionRepository.java`):
@@ -862,7 +862,7 @@ deleting a transfer always acts on both rows together, enforced in `TransactionS
 **Frontend**: the transaction form gains a "Transfer" mode (two account pickers, no category);
 the transaction list renders transfer rows distinctly (a swap icon, "Cash → GCash").
 
-## Phase 10. Full amortisation schedule calculator 📋 (v1.3.0, planned)
+### Phase 10. Full amortisation schedule calculator 📋 Planned
 
 On-demand only — no new table, no stored schedule, matching how budget progress is already
 computed live rather than cached. `GET /api/debts/{id}/amortization?monthlyPayment=X` in
@@ -872,7 +872,7 @@ Capped at a sane iteration limit; a payment too small to ever cover accruing int
 `neverPaysOff: true` instead of looping forever. Frontend: a new "Amortisation" section on the
 Debt detail view with a hypothetical-payment input and the resulting table/payoff summary.
 
-## Phase 11. Due-bill / budget-overrun notification center 📋 (v1.3.0, planned)
+### Phase 11. Due-bill / budget-overrun notification center 📋 Planned
 
 In-app only, deliberately — no email, no push, no new persisted table. A new `GET
 /api/notifications` in planning-service merges three things the app can already query: recurring
@@ -882,7 +882,7 @@ table — an item naturally reappears if its underlying condition is still true 
 is correct behaviour for something genuinely still overdue, and keeps this phase backend-light.
 Frontend: a bell icon + badge count in `AppShell.tsx`'s header opening a dismissible panel.
 
-## Phase 12. User-facing PDF monthly report 📋 (v1.3.0, planned)
+### Phase 12. User-facing PDF monthly report 📋 Planned
 
 Client-side generation, no new backend endpoint — reuses the exact `/api/reports/*` data the
 Dashboard already fetches (one source of truth for the numbers), avoiding a server-side PDF
@@ -891,7 +891,7 @@ month's income/expense/net, budget progress bars, 70-20-10 actual-vs-target, and
 breakdown table — the same figures already on screen. Sequenced after Phase 9 (transfers) so it
 never ships even a day of transfers polluting its numbers.
 
-## Phase 13. Receipt/photo attachments 📋 (v1.3.0, planned)
+### Phase 13. Receipt/photo attachments 📋 Planned
 
 A new self-hosted `minio` Compose service (S3-compatible object storage), no host port
 published. Uploads are **proxied through ledger-service** (`POST
@@ -904,17 +904,23 @@ URL per request so the object store itself is never public. Frontend: an optiona
 the transaction form (`capture="environment"` for mobile camera capture) and a thumbnail/"View
 receipt" link.
 
-## Explicitly deferred (superseded — see Phase 8's audit above)
+## Blockers & Decisions
 
-Carried forward from the v1.3 audit, with this round's additions:
+**Every previously-deferred feature was re-audited against the local-only reality.** Some were
+deferred *because* they needed a domain/hosting and are still blocked by that (Kubernetes
+manifests, a marketing landing page, Eureka/Spring Cloud Config); others were deferred for
+unrelated reasons and turned out to be just as buildable on localhost as anywhere else — those
+became Phases 9–13 above.
+
+**Considered and explicitly declined this round:**
 
 | Deferred | Why |
 | --- | --- |
-| Gmail/email receipt auto-import | Considered this round; needs Google app verification (for the restricted `gmail.readonly` scope) to avoid a 7-day refresh-token expiry, which wants a hosted privacy-policy page — circles back to the domain/hosting this project walked away from. An email-forwarding alternative (no OAuth) was discussed and not pursued either. |
-| Refresh token rotation | Considered this round, not selected — 24h JWT still adequate for local-only personal use |
+| Gmail/email receipt auto-import | Reading email content needs Google's `gmail.readonly` scope, which Google classifies as *restricted* — an app in "Testing" publishing status gets refresh tokens that expire after 7 days unless it completes Google's app-verification process, which in turn wants a live, hosted privacy-policy page. That circles back to needing the exact domain/hosting this project walked away from in v1.2.1. A lower-friction email-*forwarding* alternative (no OAuth at all) was also discussed and not pursued this round. |
+| Refresh token rotation | Reconsidered, not selected — a 24h JWT remains adequate for local-only personal use |
 | Kubernetes manifests, Eureka/Spring Cloud Config | No cloud target; Compose remains the only runtime |
 | A separate marketing landing page | No domain to point one at |
 | Message broker with denormalised rollups | Report queries are still fast; still premature |
-| A shared `common` Maven module | Reconsidered and declined at five services; unchanged by this release |
+| A shared `common` Maven module | Reconsidered and declined at five services (v1.2 Phase 3); unchanged by this release |
 | Multi-currency, shared/household budgets | Real scope, no signal either is needed |
 | CSV or bank-statement import (parsing) | Large surface area, no bank API access — distinct from this app's own JSON export/import |
