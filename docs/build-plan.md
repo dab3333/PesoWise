@@ -23,51 +23,6 @@ deployable and the history reads as the build order.
 | 9 | planning-service recurring bills + scheduler | ✅ Done |
 | 10 | Test matrix + README | ✅ Done |
 
-### v1.1 — mobile optimisation
-
-Screenshot-driven fixes across two rounds. See [changelog.md](changelog.md) for the full list
-with root causes.
-
-### v1.2 — admin, auth hardening, interest, deployment
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 1 | Roles, email verification, password reset | ✅ Done |
-| 2 | Debt interest accrual | ✅ Done |
-| 3 | admin-service (5th service) | ✅ Done |
-| 4 | Admin UI, About page, feedback | ✅ Done |
-| 5 | Landing and auth page | ✅ Done |
-| 6 | Deployment readiness | ✅ Done |
-
-### v1.2.1 — data export/import
-
-Deployment (Phase 6) hit real blockers outside the app's control — see Phase 7 below. Rather than
-keep chasing a shared server, the developer pivoted to a feature: export everything to one file,
-import it back into any install. Shipped as a patch on top of v1.2 since it is one self-contained
-feature, not a phase with its own sub-steps.
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 7 | Data export/import | ✅ Done |
-
-### v1.3.0 — deferred-feature audit + selected features (Planned, not started)
-
-v1.2.1 settled the app into a **local-only, per-device** reality — no domain, no public server,
-each install moved between devices via export/import rather than a live sync. This round
-re-audited every previously-deferred feature against that reality (some were deferred *because*
-they needed hosting and are still blocked; others were deferred for unrelated reasons and are
-just as buildable on localhost). A Gmail/email-receipt auto-import idea was also considered this
-round and explicitly declined — see Phase 8's writeup for why. Full design in Phase 8–13 below.
-
-| # | Phase | Status |
-| --- | --- | --- |
-| 8 | Foundations: rate limiting + Playwright scaffold | 📋 Planned |
-| 9 | Transfers between accounts | 📋 Planned |
-| 10 | Full amortisation schedule calculator | 📋 Planned |
-| 11 | Due-bill / budget-overrun notification center | 📋 Planned |
-| 12 | User-facing PDF monthly report | 📋 Planned |
-| 13 | Receipt/photo attachments (MinIO) | 📋 Planned |
-
 ---
 
 ## 1. Scaffolding ✅
@@ -357,8 +312,64 @@ Adding a fifth service deliberately triggers the "revisit at five" note in
 [architecture.md](architecture.md) about a shared `common` module. Resolved in Phase 3: still no
 shared module.
 
+---
+
+# v1.1 — mobile optimisation
+
+Screenshot-driven fixes across two rounds. See [changelog.md](changelog.md) for the full list
+with root causes.
+
+---
+
+# v1.2 — admin, auth hardening, interest, deployment
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 1 | Roles, email verification, password reset | ✅ Done |
+| 2 | Debt interest accrual | ✅ Done |
+| 3 | admin-service (5th service) | ✅ Done |
+| 4 | Admin UI, About page, feedback | ✅ Done |
+| 5 | Landing and auth page | ✅ Done |
+| 6 | Deployment readiness | ✅ Done |
+
+---
+
+# v1.2.1 — data export/import
+
+Deployment (Phase 6) hit real blockers outside the app's control — see Phase 7 below. Rather than
+keep chasing a shared server, the developer pivoted to a feature: export everything to one file,
+import it back into any install. Shipped as a patch on top of v1.2 since it is one self-contained
+feature, not a phase with its own sub-steps.
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 7 | Data export/import | ✅ Done |
+
+---
+
+# v1.3.0 — deferred-feature audit + selected features (Planned, not started)
+
+v1.2.1 settled the app into a **local-only, per-device** reality — no domain, no public server,
+each install moved between devices via export/import rather than a live sync. This round
+re-audited every previously-deferred feature against that reality (some were deferred *because*
+they needed hosting and are still blocked; others were deferred for unrelated reasons and are
+just as buildable on localhost). A Gmail/email-receipt auto-import idea was also considered this
+round and explicitly declined — see Phase 8's writeup for why. Full design in Phase 8–13 below.
+
+| # | Phase | Status |
+| --- | --- | --- |
+| 8 | Foundations: rate limiting + Playwright scaffold | 📋 Planned |
+| 9 | Transfers between accounts | 📋 Planned |
+| 10 | Full amortisation schedule calculator | 📋 Planned |
+| 11 | Due-bill / budget-overrun notification center | 📋 Planned |
+| 12 | User-facing PDF monthly report | 📋 Planned |
+| 13 | Receipt/photo attachments (MinIO) | 📋 Planned |
+
+---
+
 ## Known blockers
 
+---
 | # | Blocker | Blocks | Mitigation |
 | --- | --- | --- | --- |
 | 1 | No SMTP provider account | Real delivery in Phase 1 | `MAIL_ENABLED=false` logs links and self-verifies registrations, so every flow is buildable and testable without credentials |
